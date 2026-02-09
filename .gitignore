@@ -1,0 +1,25 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+DerivedData/
+build/
+dist/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.swp
+
+## Per-user settings
+**/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+
+## SwiftPM (in case you add it later)
+.build/
+Package.resolved

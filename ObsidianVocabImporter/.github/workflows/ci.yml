@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build (Release)
+        run: |
+          xcodebuild \
+            -project ObsidianVocabImporter.xcodeproj \
+            -scheme ObsidianVocabImporter \
+            -configuration Release \
+            -sdk macosx \
+            build \
+            CODE_SIGNING_ALLOWED=NO
