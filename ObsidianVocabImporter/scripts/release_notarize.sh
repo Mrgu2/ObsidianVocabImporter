@@ -105,6 +105,7 @@ need_cmd spctl
 need_cmd ditto
 need_cmd hdiutil
 need_cmd xcrun
+need_cmd python3
 need_xcrun_tool notarytool
 need_xcrun_tool stapler
 
@@ -135,10 +136,19 @@ BUILD_INFO="$OUT_DIR/build-info.txt"
   (xcodebuild -version || true) | sed 's/^/  /'
   echo
   echo "git:"
-  if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "  commit: $(git -C "$ROOT" rev-parse HEAD)"
+  # Best-effort: some users keep the repo root above this folder.
+  GIT_TOP=""
+  if command -v git >/dev/null 2>&1; then
+    GIT_TOP="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -z "$GIT_TOP" ]]; then
+      GIT_TOP="$(git -C "$ROOT/.." rev-parse --show-toplevel 2>/dev/null || true)"
+    fi
+  fi
+  if [[ -n "$GIT_TOP" ]]; then
+    echo "  toplevel: $GIT_TOP"
+    echo "  commit: $(git -C "$GIT_TOP" rev-parse HEAD)"
     echo "  status:"
-    (git -C "$ROOT" status -sb || true) | sed 's/^/    /'
+    (git -C "$GIT_TOP" status -sb || true) | sed 's/^/    /'
   else
     echo "  (not a git repo)"
   fi
@@ -149,7 +159,11 @@ BUILD_INFO="$OUT_DIR/build-info.txt"
   echo "  OVI_NOTARY_PROFILE: ${OVI_NOTARY_PROFILE:-"(unset)"}"
   echo "  OVI_APPLE_ID: ${OVI_APPLE_ID:-"(unset)"}"
   echo "  OVI_TEAM_ID: ${OVI_TEAM_ID:-"(unset)"}"
-  echo "  OVI_APP_PASSWORD: ${OVI_APP_PASSWORD:+(set)}${OVI_APP_PASSWORD:-(unset)}"
+  if [[ -n "${OVI_APP_PASSWORD:-}" ]]; then
+    echo "  OVI_APP_PASSWORD: (set)"
+  else
+    echo "  OVI_APP_PASSWORD: (unset)"
+  fi
   echo
 } >"$BUILD_INFO"
 
@@ -198,7 +212,7 @@ require_hardened_runtime() {
   out="$(codesign -dv --verbose=4 "$app" 2>&1 || true)"
   echo "codesign_details:" >>"$BUILD_INFO"
   echo "$out" | sed 's/^/  /' >>"$BUILD_INFO"
-  echo "$out" | rg -q "Runtime Version|runtime" || return 1
+  echo "$out" | grep -qiE "runtime" || return 1
 }
 
 if [[ "$DRY_RUN" == "0" && "$SKIP_NOTARIZE" == "0" ]]; then
@@ -348,4 +362,3 @@ echo "build-info: $BUILD_INFO"
 [[ -n "$ZIP_PATH" ]] && echo "ZIP: $ZIP_PATH"
 [[ -n "$DMG_PATH" ]] && echo "DMG: $DMG_PATH"
 echo "Done."
-

@@ -1,5 +1,6 @@
-import SwiftUI
+import AppKit
 import ServiceManagement
+import SwiftUI
 
 struct SettingsView: View {
     @AppStorage(PreferencesKeys.outputRootName) private var outputRootName: String = Defaults.outputRootName
@@ -9,9 +10,9 @@ struct SettingsView: View {
     @AppStorage(PreferencesKeys.highlightVocabInSentences) private var highlightVocabInSentences: Bool = Defaults.highlightVocabInSentences
     @AppStorage(PreferencesKeys.autoArchiveMastered) private var autoArchiveMastered: Bool = Defaults.autoArchiveMastered
     @AppStorage(PreferencesKeys.addMasteredTag) private var addMasteredTag: Bool = Defaults.addMasteredTag
-    @AppStorage(PreferencesKeys.launchAtLogin) private var launchAtLoginPreference: Bool = Defaults.launchAtLogin
 
     @State private var launchAtLoginEnabled: Bool = false
+    @State private var launchAtLoginApprovalRequired: Bool = false
     @State private var launchAtLoginErrorMessage: String = ""
     @State private var isShowingLaunchAtLoginError: Bool = false
 
@@ -29,37 +30,45 @@ struct SettingsView: View {
         )
     }
 
+    private func syncLaunchAtLoginState() {
+        let st = LaunchAtLoginManager.status()
+        launchAtLoginEnabled = LaunchAtLoginManager.isEnabledOrPendingApproval(st)
+        launchAtLoginApprovalRequired = (st == .requiresApproval)
+    }
+
     var body: some View {
         Form {
             Section("应用") {
                 Toggle("开机自启动", isOn: Binding(
                     get: { launchAtLoginEnabled },
                     set: { newValue in
-                        let oldValue = launchAtLoginEnabled
+                        let oldEnabled = launchAtLoginEnabled
+                        let oldApproval = launchAtLoginApprovalRequired
                         launchAtLoginEnabled = newValue
                         do {
                             try LaunchAtLoginManager.setEnabled(newValue)
-                            let effective = LaunchAtLoginManager.isEnabledOrPendingApproval()
-                            launchAtLoginEnabled = effective
-                            launchAtLoginPreference = effective
+                            syncLaunchAtLoginState()
 
-                            if LaunchAtLoginManager.requiresApproval() {
+                            if launchAtLoginApprovalRequired {
                                 // Some environments need explicit approval in System Settings.
                                 LaunchAtLoginManager.openSystemSettingsLoginItems()
                             }
                         } catch {
-                            launchAtLoginEnabled = oldValue
-                            launchAtLoginPreference = oldValue
+                            launchAtLoginEnabled = oldEnabled
+                            launchAtLoginApprovalRequired = oldApproval
                             launchAtLoginErrorMessage = error.localizedDescription
                             isShowingLaunchAtLoginError = true
                         }
                     }
                 ))
 
-                if LaunchAtLoginManager.requiresApproval() {
+                if launchAtLoginApprovalRequired {
                     Button("打开系统设置（登录项）") {
                         LaunchAtLoginManager.openSystemSettingsLoginItems()
                     }
+                    Text("系统需要你在“系统设置 > 通用 > 登录项”里允许该登录项，才能真正生效。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Text("说明：开启后应用会加入系统“登录项”，以便开机登录后自动启动。")
@@ -109,10 +118,12 @@ struct SettingsView: View {
         .padding(20)
         .frame(width: 520)
         .onAppear {
-            // Sync UI + stored preference to the effective system login item state.
-            let state = LaunchAtLoginManager.isEnabledOrPendingApproval()
-            launchAtLoginEnabled = state
-            launchAtLoginPreference = state
+            // Always reflect the effective system login item state.
+            syncLaunchAtLoginState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // User may approve/deny in System Settings; refresh when coming back.
+            syncLaunchAtLoginState()
         }
         .alert("无法设置开机自启动", isPresented: $isShowingLaunchAtLoginError) {
             Button("好", role: .cancel) {}
@@ -127,17 +138,15 @@ private enum LaunchAtLoginManager {
         SMAppService.mainApp.status
     }
 
-    static func isEnabledOrPendingApproval() -> Bool {
-        switch status() {
+    static func isEnabledOrPendingApproval(_ st: SMAppService.Status) -> Bool {
+        switch st {
         case .enabled, .requiresApproval:
             return true
-        default:
+        case .notRegistered, .notFound:
+            return false
+        @unknown default:
             return false
         }
-    }
-
-    static func requiresApproval() -> Bool {
-        status() == .requiresApproval
     }
 
     static func setEnabled(_ enabled: Bool) throws {

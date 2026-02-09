@@ -24,11 +24,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
-        InstallEventHandler(GetApplicationEventTarget(), hotKeyEventHandler, 1, &eventSpec, userData, &eventHandlerRef)
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), hotKeyEventHandler, 1, &eventSpec, userData, &eventHandlerRef)
+        if handlerStatus != noErr {
+            NSLog("OEI: failed to install hotkey event handler (status=%d)", handlerStatus)
+            eventHandlerRef = nil
+            return
+        }
 
         let hkID = EventHotKeyID(signature: hotKeySignature, id: hotKeyID)
         let modifiers = UInt32(cmdKey | optionKey | controlKey)
-        RegisterEventHotKey(UInt32(kVK_ANSI_V), modifiers, hkID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        let hkStatus = RegisterEventHotKey(UInt32(kVK_ANSI_V), modifiers, hkID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        if hkStatus != noErr {
+            NSLog("OEI: failed to register global hotkey (status=%d)", hkStatus)
+            hotKeyRef = nil
+        }
     }
 
     private func unregisterHotKey() {

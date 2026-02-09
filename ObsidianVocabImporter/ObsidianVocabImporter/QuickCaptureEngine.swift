@@ -37,6 +37,35 @@ struct QuickCaptureResult: Sendable {
 }
 
 enum QuickCaptureEngine {
+    private static func sanitizeVocabWordForCapture(_ raw: String) -> String {
+        // Quick-capture often comes from subtitles/clipboard with trailing punctuation, quotes, etc.
+        // We only strip *surrounding* punctuation so we keep internal characters like "can't" or "co-operate".
+        var s = raw.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
+        if s.isEmpty { return s }
+
+        // Remove common surrounding wrappers/punctuation repeatedly.
+        // Intentionally *not* stripping generic `.symbols` because it would break words like "C++" / "C#".
+        let wrappers: Set<Character> = [
+            "\"", "'", "“", "”", "‘", "’",
+            "(", ")", "[", "]", "{", "}", "<", ">",
+            "（", "）", "【", "】", "「", "」", "『", "』", "《", "》",
+            ",", ".", "!", "?", ":", ";",
+            "，", "。", "！", "？", "：", "；",
+            "…", "—", "–", "-", "·"
+        ]
+
+        while let first = s.first, wrappers.contains(first) {
+            s.removeFirst()
+            s = s.oeiTrimmed()
+        }
+        while let last = s.last, wrappers.contains(last) {
+            s.removeLast()
+            s = s.oeiTrimmed()
+        }
+
+        return s.oeiCompressWhitespaceToSingleSpaces()
+    }
+
     static func capture(
         input: QuickCaptureInput,
         vaultURL: URL,
@@ -58,6 +87,10 @@ enum QuickCaptureEngine {
         let primaryIndexExists = fm.fileExists(atPath: indexStore.indexURL.path)
         let legacyIndexExists = fm.fileExists(atPath: indexStore.legacyIndexURL.path)
 
+        // If we only have the legacy index file, we still want to persist the merged sets to the primary
+        // location at least once so future builds can rely on the primary index alone.
+        var shouldPersistIndexBeforeEarlyReturn = (!primaryIndexExists && legacyIndexExists)
+        var indexUpdatedByScan = false
         var outputIsDir: ObjCBool = false
         if fm.fileExists(atPath: outputRoot.path, isDirectory: &outputIsDir), outputIsDir.boolValue {
             let sampleLimit = 24
@@ -105,6 +138,9 @@ enum QuickCaptureEngine {
             }
 
             if needsFullScan {
+                let beforeS = index.sentences.count
+                let beforeV = index.vocab.count
+
                 var scannedS: Set<String> = []
                 var scannedV: Set<String> = []
                 scannedS.reserveCapacity(1024)
@@ -123,6 +159,10 @@ enum QuickCaptureEngine {
 
                 index.sentences.formUnion(scannedS)
                 index.vocab.formUnion(scannedV)
+                indexUpdatedByScan = (index.sentences.count != beforeS) || (index.vocab.count != beforeV)
+                if indexUpdatedByScan {
+                    shouldPersistIndexBeforeEarlyReturn = true
+                }
             }
         }
 
@@ -137,14 +177,23 @@ enum QuickCaptureEngine {
 
         switch input.kind {
         case .vocabulary:
-            id = VocabClip.makeID(word: rawText)
+            let cleanedWord = sanitizeVocabWordForCapture(rawText)
+            if cleanedWord.isEmpty {
+                throw NSError(domain: "OEI", code: 801, userInfo: [NSLocalizedDescriptionKey: "内容为空。"])
+            }
+
+            id = VocabClip.makeID(word: cleanedWord)
             if index.vocab.contains(id) {
-                return QuickCaptureResult(outcome: .skippedIndexDuplicate, message: "已存在（历史索引查重）：\(rawText)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
+                if shouldPersistIndexBeforeEarlyReturn {
+                    // Best-effort persist of self-heal / legacy promotion even when the capture is a no-op.
+                    try? indexStore.save(index)
+                }
+                return QuickCaptureResult(outcome: .skippedIndexDuplicate, message: "已存在（历史索引查重）：\(cleanedWord)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
             }
             newVocab = [
                 VocabClip(
                     id: id,
-                    word: rawText,
+                    word: cleanedWord,
                     phonetic: nil,
                     translation: input.translation,
                     date: input.dateYMD
@@ -156,6 +205,10 @@ enum QuickCaptureEngine {
             let sourceOrNil = sourceField.isEmpty ? nil : sourceField
             id = SentenceClip.makeID(sentence: rawText, url: sourceOrNil)
             if index.sentences.contains(id) {
+                if shouldPersistIndexBeforeEarlyReturn {
+                    // Best-effort persist of self-heal / legacy promotion even when the capture is a no-op.
+                    try? indexStore.save(index)
+                }
                 return QuickCaptureResult(outcome: .skippedIndexDuplicate, message: "已存在（历史索引查重）：\(rawText)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
             }
             newSentences = [
@@ -237,22 +290,46 @@ enum QuickCaptureEngine {
         for i in 0..<lines.count {
             if !lines[i].contains(id) { continue }
 
+            // Find the entry head line that owns this id line, and ensure the id is inside that block
+            // before tagging. This prevents accidental tagging when the file was manually edited.
+            var headIdx: Int? = nil
             var j = i
             while j >= 0 {
                 if isEntryHeadLine(lines[j]) {
-                    if lines[j].contains("#wrong") { return false }
-                    lines[j] += " #wrong"
-
-                    var out = lines.joined(separator: "\n")
-                    if !out.hasSuffix("\n") { out += "\n" }
-                    try AtomicFileWriter.writeString(out, to: url)
-                    return true
+                    headIdx = j
+                    break
                 }
                 j -= 1
             }
+            guard let head = headIdx else { continue }
+
+            var end = head + 1
+            while end < lines.count {
+                let t = lines[end].trimmingCharacters(in: .whitespacesAndNewlines)
+                if t.hasPrefix("- [") || t.hasPrefix("## ") {
+                    break
+                }
+                end += 1
+            }
+
+            var ownsID = false
+            if head < end {
+                for k in head..<end where lines[k].contains(id) {
+                    ownsID = true
+                    break
+                }
+            }
+            guard ownsID else { continue }
+
+            if lines[head].contains("#wrong") { return false }
+            lines[head] += " #wrong"
+
+            var out = lines.joined(separator: "\n")
+            if !out.hasSuffix("\n") { out += "\n" }
+            try AtomicFileWriter.writeString(out, to: url)
+            return true
         }
 
         return false
     }
 }
-

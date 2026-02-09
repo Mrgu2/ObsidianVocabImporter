@@ -806,8 +806,25 @@ struct MarkdownUpdater {
         guard line.hasPrefix("- [") else { return nil }
         guard let r = line.range(of: "] ") else { return nil }
         let rest = line[r.upperBound...]
-        let noTag = rest.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: true).first ?? Substring(rest)
-        return String(noTag).trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripTrailingAppTags(String(rest))
+    }
+
+    private static func stripTrailingAppTags(_ s: String) -> String {
+        // Only strip tags that this app writes automatically.
+        // Do not split on '#' in general, otherwise words like "C#" would be truncated.
+        var t = s.oeiTrimmed()
+        while true {
+            if t.hasSuffix(" #wrong") {
+                t = String(t.dropLast(" #wrong".count)).oeiTrimmed()
+                continue
+            }
+            if t.hasSuffix(" #mastered") {
+                t = String(t.dropLast(" #mastered".count)).oeiTrimmed()
+                continue
+            }
+            break
+        }
+        return t
     }
 
     private static func applySentenceHighlightInPlace(lines: inout [String], tokenSet: Set<String>) {

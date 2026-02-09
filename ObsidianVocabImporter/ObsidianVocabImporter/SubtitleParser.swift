@@ -120,6 +120,15 @@ enum SubtitleParser {
                 continue
             }
 
+            // Skip STYLE / REGION blocks.
+            if line.uppercased().hasPrefix("STYLE") || line.uppercased().hasPrefix("REGION") {
+                i += 1
+                while i < lines.count, !lines[i].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    i += 1
+                }
+                continue
+            }
+
             // Cue may start with an identifier line.
             var timeLine = line
             if !timeLine.contains("-->"), i + 1 < lines.count {
@@ -142,10 +151,6 @@ enum SubtitleParser {
                 if t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     break
                 }
-                // Skip STYLE blocks that can appear between cues.
-                if t.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("STYLE") {
-                    break
-                }
                 textLines.append(t)
                 i += 1
             }
@@ -154,8 +159,7 @@ enum SubtitleParser {
             if !cueText.isEmpty {
                 out.append(SubtitleCue(start: normalizeTime(start), end: normalizeTime(end), text: cueText))
             }
-
-            i += 1
+            // Next loop will skip blank line.
         }
 
         return out
@@ -191,4 +195,3 @@ enum SubtitleParser {
         return t.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
     }
 }
-

@@ -5,9 +5,6 @@ enum PreferencesKeys {
     static let organizeByDateFolder = "oei.organizeByDateFolder"
     static let yearCompletionStrategy = "oei.yearCompletionStrategy"
 
-    // App behaviors
-    static let launchAtLogin = "oei.launchAtLogin"
-
     // Merged mode layout / rendering behaviors
     static let mergedLayoutStrategy = "oei.mergedLayoutStrategy"
     static let highlightVocabInSentences = "oei.highlightVocabInSentences"
@@ -26,8 +23,6 @@ enum Defaults {
     static let outputRootName = "English Clips"
     static let organizeByDateFolder = true
     static let yearCompletionStrategy: YearCompletionStrategy = .systemYear
-
-    static let launchAtLogin = false
 
     static let mergedLayoutStrategy: MergedLayoutStrategy = .vocabThenSentences
     static let highlightVocabInSentences = true

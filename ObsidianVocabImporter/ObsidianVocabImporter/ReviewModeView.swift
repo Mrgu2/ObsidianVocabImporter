@@ -158,9 +158,13 @@ final class ReviewModeViewModel: ObservableObject {
         return DateParsing.formatYMD(year: year, month: month, day: day)
     }
 
-    private static func parseUncheckedItems(markdown: String) -> [ReviewItem] {
+    nonisolated private static func parseUncheckedItems(markdown: String) -> [ReviewItem] {
         let text = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let lines = text.components(separatedBy: "\n")
+
+        // Keep regex local to avoid any global/shared-state concurrency warnings under strict checks.
+        let vocabRegex = try! NSRegularExpression(pattern: "\\bvocab_[0-9a-f]{40}\\b", options: [])
+        let sentRegex = try! NSRegularExpression(pattern: "\\bsent_[0-9a-f]{40}\\b", options: [])
 
         enum SectionKind {
             case none
@@ -185,8 +189,25 @@ final class ReviewModeViewModel: ObservableObject {
             guard t.hasPrefix("- [") else { return nil }
             guard let r = t.range(of: "] ") else { return nil }
             let rest = t[r.upperBound...]
-            let noTag = rest.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: true).first ?? Substring(rest)
-            return String(noTag).trimmingCharacters(in: .whitespacesAndNewlines)
+            return stripTrailingAppTags(String(rest))
+        }
+
+        func stripTrailingAppTags(_ s: String) -> String {
+            // Only strip tags that this app writes automatically.
+            // Do not split on '#' in general, otherwise words like "C#" would be truncated.
+            var t = s.oeiTrimmed()
+            while true {
+                if t.hasSuffix(" #wrong") {
+                    t = String(t.dropLast(" #wrong".count)).oeiTrimmed()
+                    continue
+                }
+                if t.hasSuffix(" #mastered") {
+                    t = String(t.dropLast(" #mastered".count)).oeiTrimmed()
+                    continue
+                }
+                break
+            }
+            return t
         }
 
         func extractID(from block: String) -> String? {
@@ -268,9 +289,6 @@ final class ReviewModeViewModel: ObservableObject {
 
         return out
     }
-
-    private static let vocabRegex = try! NSRegularExpression(pattern: "\\bvocab_[0-9a-f]{40}\\b", options: [])
-    private static let sentRegex = try! NSRegularExpression(pattern: "\\bsent_[0-9a-f]{40}\\b", options: [])
 }
 
 struct ReviewModeView: View {
@@ -308,7 +326,7 @@ struct ReviewModeView: View {
 
                 Spacer()
 
-                Text("\(min(vm.currentIndex + 1, max(vm.items.count, 1)))/\(vm.items.count)")
+                Text(vm.items.isEmpty ? "0/0" : "\(vm.currentIndex + 1)/\(vm.items.count)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

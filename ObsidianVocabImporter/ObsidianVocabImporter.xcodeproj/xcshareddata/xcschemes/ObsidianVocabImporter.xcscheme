@@ -14,8 +14,8 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "E400CD2D58751C6CA6E81567"
-               BuildableName = "Obsidian Vocab Importer.app"
+               BlueprintIdentifier = "F5B42474E1AE252830FC2AA4"
+               BuildableName = "ObsidianVocabImporter.app"
                BlueprintName = "ObsidianVocabImporter"
                ReferencedContainer = "container:ObsidianVocabImporter.xcodeproj">
             </BuildableReference>
@@ -30,8 +30,8 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "E400CD2D58751C6CA6E81567"
-            BuildableName = "Obsidian Vocab Importer.app"
+            BlueprintIdentifier = "F5B42474E1AE252830FC2AA4"
+            BuildableName = "ObsidianVocabImporter.app"
             BlueprintName = "ObsidianVocabImporter"
             ReferencedContainer = "container:ObsidianVocabImporter.xcodeproj">
          </BuildableReference>
@@ -53,8 +53,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "E400CD2D58751C6CA6E81567"
-            BuildableName = "Obsidian Vocab Importer.app"
+            BlueprintIdentifier = "F5B42474E1AE252830FC2AA4"
+            BuildableName = "ObsidianVocabImporter.app"
             BlueprintName = "ObsidianVocabImporter"
             ReferencedContainer = "container:ObsidianVocabImporter.xcodeproj">
          </BuildableReference>
@@ -70,8 +70,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "E400CD2D58751C6CA6E81567"
-            BuildableName = "Obsidian Vocab Importer.app"
+            BlueprintIdentifier = "F5B42474E1AE252830FC2AA4"
+            BuildableName = "ObsidianVocabImporter.app"
             BlueprintName = "ObsidianVocabImporter"
             ReferencedContainer = "container:ObsidianVocabImporter.xcodeproj">
          </BuildableReference>

@@ -37,6 +37,11 @@ struct ContentView: View {
                     reviewVM.vaultURLOverride = importerVM.vaultURL
                 }
         }
+        .onChange(of: importerVM.vaultURL) { newValue in
+            // Keep other tabs in sync if the user changes Vault after visiting those tabs.
+            captureVM.vaultURLOverride = newValue
+            subtitleVM.vaultURLOverride = newValue
+            reviewVM.vaultURLOverride = newValue
+        }
     }
 }
-
