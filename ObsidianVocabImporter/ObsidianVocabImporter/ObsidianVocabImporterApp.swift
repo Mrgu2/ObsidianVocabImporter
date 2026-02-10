@@ -8,7 +8,6 @@ struct ObsidianVocabImporterApp: App {
         WindowGroup {
             ContentView()
         }
-        .windowResizability(.contentMinSize)
 
         Settings {
             SettingsView()

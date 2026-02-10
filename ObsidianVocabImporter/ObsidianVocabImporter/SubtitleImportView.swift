@@ -100,7 +100,7 @@ final class SubtitleImportViewModel: ObservableObject {
             source = ""
         }
 
-        let input = QuickCaptureInput(kind: .sentence, text: cue.text, translation: "", source: source, dateYMD: dateYMD)
+        let input = QuickCaptureInput(kind: .sentence, text: cue.text, translation: "", source: source, contextSentence: "", dateYMD: dateYMD)
 
         isWorking = true
         statusText = "正在写入…"
@@ -177,7 +177,7 @@ struct SubtitleImportView: View {
                         .tag(cue.id)
                     }
                 }
-                .frame(minWidth: 520, minHeight: 360)
+                .frame(minWidth: 260, minHeight: 240)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("预览")
@@ -188,9 +188,12 @@ struct SubtitleImportView: View {
                         Text(cue.timeRangeDisplay)
                             .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(.secondary)
-                        TextEditor(text: .constant(cue.text))
-                            .font(.system(.body, design: .monospaced))
-                            .disabled(true)
+                        ScrollView {
+                            Text(cue.text)
+                                .font(.system(.body, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(.vertical, 4)
+                        }
                     } else {
                         Text("未选择")
                             .font(.footnote)
@@ -199,7 +202,7 @@ struct SubtitleImportView: View {
 
                     Spacer()
                 }
-                .frame(minWidth: 280)
+                .frame(minWidth: 220)
             }
 
             if !vm.statusText.isEmpty {
@@ -209,7 +212,7 @@ struct SubtitleImportView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 860, minHeight: 720)
+        // Keep the UI usable on smaller screens/windows.
+        .frame(minWidth: 520, minHeight: 360)
     }
 }
-

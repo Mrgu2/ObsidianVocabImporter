@@ -19,7 +19,12 @@ struct ImportTabView: View {
         )
     }
 
-    var body: some View { rootView }
+    var body: some View {
+        ScrollView(.vertical) {
+            rootView
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
 
     private var rootView: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,15 +38,16 @@ struct ImportTabView: View {
             resultSection
         }
         .padding(14)
-        .frame(minWidth: 860, minHeight: 720)
+        // Keep the UI usable on smaller screens/windows.
+        .frame(minWidth: 520, minHeight: 360)
         .sheet(item: $vm.pendingColumnMapping, content: columnMappingSheet)
-        .onChange(of: vm.vaultURL) { _, _ in vm.schedulePreviewRefresh() }
-        .onChange(of: vm.sentenceCSVURL) { _, _ in vm.schedulePreviewRefresh() }
-        .onChange(of: vm.vocabCSVURL) { _, _ in vm.schedulePreviewRefresh() }
-        .onChange(of: vm.mode) { _, _ in vm.schedulePreviewRefresh() }
+        .onChange(of: vm.vaultURL) { _ in vm.schedulePreviewRefresh() }
+        .onChange(of: vm.sentenceCSVURL) { _ in vm.schedulePreviewRefresh() }
+        .onChange(of: vm.vocabCSVURL) { _ in vm.schedulePreviewRefresh() }
+        .onChange(of: vm.mode) { _ in vm.schedulePreviewRefresh() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             // Preferences affect output path and year completion; invalidate preview when they change.
-            vm.schedulePreviewRefresh()
+            vm.handleUserDefaultsDidChange()
         }
     }
 
@@ -206,13 +212,18 @@ struct ImportTabView: View {
         .foregroundStyle(.secondary)
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(prepared.days) { day in
                     DisclosureGroup("\(day.date)  (+V \(day.appendedVocabIDs.count) / +S \(day.appendedSentenceIDs.count))  →  \(day.relativeOutputPath)") {
-                        TextEditor(text: .constant(day.markdownPreview))
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 220)
-                            .disabled(true)
+                        // TextEditor is heavy and can feel janky when the window is moved/resized.
+                        // A ScrollView + Text keeps the preview lightweight while still selectable/copyable.
+                        ScrollView([.vertical, .horizontal]) {
+                            Text(day.markdownPreview)
+                                .font(.system(.body, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(.vertical, 4)
+                        }
+                        .frame(minHeight: 220)
                     }
                 }
             }
@@ -292,10 +303,15 @@ struct ImportTabView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                    TextEditor(text: .constant(p.previewText))
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 140, maxHeight: 220)
-                        .disabled(true)
+                    ScrollView([.vertical, .horizontal]) {
+                        Text(p.previewText)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .padding(8)
+                    }
+                    .frame(minHeight: 140, maxHeight: 220)
+                    .background(.quaternary.opacity(0.06))
+                    .cornerRadius(8)
                 } else {
                     Text("暂无导出预览。")
                         .font(.footnote)
@@ -322,9 +338,15 @@ struct ImportTabView: View {
                 }
                 .font(.footnote)
 
-                TextEditor(text: $vm.importSummary)
-                    .font(.system(.footnote, design: .monospaced))
-                    .frame(minHeight: 120)
+                ScrollView([.vertical, .horizontal]) {
+                    Text(vm.importSummary)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(8)
+                }
+                .frame(minHeight: 120)
+                .background(.quaternary.opacity(0.06))
+                .cornerRadius(8)
             }
         }
     }

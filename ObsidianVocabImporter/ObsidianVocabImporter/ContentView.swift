@@ -16,6 +16,7 @@ struct ContentView: View {
                 onClose: {
                     captureVM.text = ""
                     captureVM.translation = ""
+                    captureVM.contextSentence = ""
                     captureVM.source = ""
                     captureVM.statusText = ""
                 }

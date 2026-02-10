@@ -27,7 +27,8 @@ struct MarkdownUpdater {
         mode: ImportMode,
         newSentences: [SentenceClip],
         newVocab: [VocabClip],
-        preferences: PreferencesSnapshot
+        preferences: PreferencesSnapshot,
+        frontmatterSource: String = "imported"
     ) -> MarkdownUpdateResult {
         let normalizedExisting = existing?.oeiNormalizeLineEndings()
         let (existingSentIDs, existingVocabIDs) = extractIDs(from: normalizedExisting ?? "")
@@ -38,7 +39,7 @@ struct MarkdownUpdater {
         var lines: [String] = normalizedExisting?.components(separatedBy: "\n") ?? []
 
         // 1) Frontmatter: preserve unknown keys but ensure our required keys exist.
-        lines = upsertFrontmatter(lines: lines, date: date)
+        lines = upsertFrontmatter(lines: lines, date: date, source: frontmatterSource)
 
         // 2) Ensure overview line exists (we rewrite it at the end with correct totals).
         let overviewIndex = upsertOverviewPlaceholder(lines: &lines)
@@ -110,6 +111,13 @@ struct MarkdownUpdater {
             }
         }
 
+        // 6) Formatting normalization:
+        // - Hide internal IDs from the rendered note while keeping them in-file for dedup/self-heal.
+        // - For quick-captured notes, de-duplicate a single repeated source (e.g. a YouTube URL) by
+        //   promoting it to one top-level heading.
+        normalizeIDLinesInPlace(lines: &lines)
+        normalizeCapturedSourcePresentationInPlace(lines: &lines)
+
         // 6) Update overview with totals after write.
         let counts = computeOverviewCounts(lines: lines)
         let overviewLine = renderOverviewLine(counts)
@@ -144,6 +152,12 @@ struct MarkdownUpdater {
         if overviewIndex < lines.count {
             lines[overviewIndex] = renderOverviewLine(counts)
         }
+
+        // Keep files tidy when the user runs maintenance:
+        // - Hide IDs (keep them for dedup/self-heal but avoid visual noise).
+        // - If everything in a note shares one source, promote it to a single heading.
+        normalizeIDLinesInPlace(lines: &lines)
+        normalizeCapturedSourcePresentationInPlace(lines: &lines)
 
         var out = lines.joined(separator: "\n")
         if !out.hasSuffix("\n") {
@@ -259,8 +273,12 @@ struct MarkdownUpdater {
     }
 
     private static func upsertFrontmatter(lines: [String], date: String) -> [String] {
+        upsertFrontmatter(lines: lines, date: date, source: "imported")
+    }
+
+    private static func upsertFrontmatter(lines: [String], date: String, source: String) -> [String] {
         guard !lines.isEmpty else {
-            return canonicalFrontmatterLines(date: date)
+            return canonicalFrontmatterLines(date: date, source: source)
         }
 
         if lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") {
@@ -272,26 +290,26 @@ struct MarkdownUpdater {
             } else {
                 rest = []
             }
-            let updatedBody = upsertFrontmatterBody(fmBody, date: date)
+            let updatedBody = upsertFrontmatterBody(fmBody, date: date, source: source)
             return ["---"] + updatedBody + ["---", ""] + rest
         }
 
         // No frontmatter detected.
-        return canonicalFrontmatterLines(date: date) + lines
+        return canonicalFrontmatterLines(date: date, source: source) + lines
     }
 
-    private static func canonicalFrontmatterLines(date: String) -> [String] {
+    private static func canonicalFrontmatterLines(date: String, source: String) -> [String] {
         [
             "---",
             "date: \(date)",
-            "source: imported",
+            "source: \(source)",
             "tags: [english, review]",
             "---",
             ""
         ]
     }
 
-    private static func upsertFrontmatterBody(_ body: [String], date: String) -> [String] {
+    private static func upsertFrontmatterBody(_ body: [String], date: String, source: String) -> [String] {
         var out: [String] = []
         out.reserveCapacity(body.count + 3)
 
@@ -309,7 +327,8 @@ struct MarkdownUpdater {
                 continue
             }
             if lower.hasPrefix("source:") {
-                out.append("source: imported")
+                // Preserve existing source to avoid destructively rewriting semantics.
+                out.append(line)
                 seenSource = true
                 continue
             }
@@ -323,7 +342,7 @@ struct MarkdownUpdater {
         }
 
         if !seenDate { out.append("date: \(date)") }
-        if !seenSource { out.append("source: imported") }
+        if !seenSource { out.append("source: \(source)") }
         if !seenTags { out.append("tags: [english, review]") }
 
         return out
@@ -361,6 +380,193 @@ struct MarkdownUpdater {
 
         let rendered = set.sorted().joined(separator: ", ")
         return "tags: [\(rendered)]"
+    }
+
+    private static func normalizeIDLinesInPlace(lines: inout [String]) {
+        // Convert legacy ID lines into an inline HTML comment attached to the previous metadata line.
+        // This keeps IDs in-file for dedup/self-heal while avoiding extra noisy lines in the note.
+        func extractIDValue(from trimmed: String) -> String? {
+            if trimmed.hasPrefix("- id:") {
+                let v = String(trimmed.dropFirst("- id:".count)).oeiTrimmed()
+                return v.isEmpty ? nil : v
+            }
+            if trimmed.hasPrefix("<!-- id:") && trimmed.hasSuffix("-->") {
+                let v0 = trimmed.dropFirst("<!-- id:".count)
+                let v1 = String(v0.dropLast("-->".count)).oeiTrimmed()
+                let out = v1
+                return out.isEmpty ? nil : out
+            }
+            return nil
+        }
+
+        var i = 0
+        while i < lines.count {
+            let raw = lines[i]
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let idValue = extractIDValue(from: trimmed) else {
+                i += 1
+                continue
+            }
+
+            // Find a suitable line above to attach the inline comment to.
+            var j = i - 1
+            while j >= 0, lines[j].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                j -= 1
+            }
+            if j >= 0 {
+                let prevTrimmed = lines[j].trimmingCharacters(in: .whitespaces)
+                let canAttach = prevTrimmed.hasPrefix("- [") || prevTrimmed.hasPrefix("- 中文：") || prevTrimmed.hasPrefix("- 释义：") || prevTrimmed.hasPrefix("- 来源：") || prevTrimmed.hasPrefix("- 相关词：")
+                if canAttach, !lines[j].contains("<!-- id:") {
+                    lines[j] += " <!-- id: \(idValue) -->"
+                    lines.remove(at: i)
+                    continue
+                }
+            }
+
+            // Fallback: keep it as a hidden comment line.
+            let indent = raw.prefix { $0 == " " || $0 == "\t" }
+            lines[i] = "\(indent)<!-- id: \(idValue) -->"
+            i += 1
+        }
+    }
+
+    private static func normalizeCapturedSourcePresentationInPlace(lines: inout [String]) {
+        // For YouTube watching, users commonly capture many clips from the same video URL.
+        // Repeating "来源：<url>" for every entry is noisy, so we promote a single repeated source
+        // to a top-level heading and remove per-entry source lines.
+        var perEntrySources: Set<String> = []
+        perEntrySources.reserveCapacity(4)
+
+        func isIndentedSourceLine(_ raw: String) -> Bool {
+            raw.hasPrefix("  - 来源：") || raw.hasPrefix("\t- 来源：")
+        }
+
+        for raw in lines {
+            guard isIndentedSourceLine(raw) else { continue }
+            let t = raw.trimmingCharacters(in: .whitespaces)
+            let v = String(t.dropFirst("- 来源：".count)).oeiTrimmed()
+            if !v.isEmpty {
+                perEntrySources.insert(v)
+            }
+        }
+
+        // Detect existing promoted heading (if any). Important: if a note was previously promoted to a
+        // single heading and later gets entries from another source, we must "demote" the heading back
+        // into per-entry source lines to avoid losing the original source information.
+        let sourceHeadingIndices = lines.enumerated().compactMap { idx, raw -> Int? in
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (t.hasPrefix("## 来源：") || t.hasPrefix("### 来源：")) ? idx : nil
+        }
+        let sourceHeadingValue: String? = {
+            guard sourceHeadingIndices.count == 1 else { return nil }
+            let raw = lines[sourceHeadingIndices[0]].trimmingCharacters(in: .whitespacesAndNewlines)
+            if raw.hasPrefix("## 来源：") {
+                return String(raw.dropFirst("## 来源：".count)).oeiTrimmed()
+            }
+            if raw.hasPrefix("### 来源：") {
+                return String(raw.dropFirst("### 来源：".count)).oeiTrimmed()
+            }
+            return nil
+        }()
+
+        if let heading = sourceHeadingValue, !heading.isEmpty {
+            // If the file already has a promoted heading and we now see a different per-entry source,
+            // it means the day contains multiple sources. Demote the heading back into per-entry lines
+            // for entries that don't have an explicit source line.
+            if !perEntrySources.isEmpty && (perEntrySources.count != 1 || perEntrySources.first != heading) {
+                demoteSingleSourceHeadingInPlace(lines: &lines, source: heading)
+                return
+            }
+        }
+
+        // Only safe to promote when there is exactly one distinct source and the note is not mixed-source.
+        guard perEntrySources.count == 1, let only = perEntrySources.first else { return }
+
+        // Remove existing source headings (if any) to keep it stable.
+        lines.removeAll(where: {
+            let t = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.hasPrefix("## 来源：") || t.hasPrefix("### 来源：")
+        })
+
+        // Insert "## 来源：..." after the overview line (and its spacing).
+        if let overviewIdx = lines.firstIndex(where: { $0.hasPrefix("**Overview:**") }) {
+            var insertAt = overviewIdx + 1
+            while insertAt < lines.count, lines[insertAt].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                insertAt += 1
+            }
+            // Keep one blank line separation from surrounding content.
+            if insertAt > 0, !lines[insertAt - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.insert("", at: insertAt)
+                insertAt += 1
+            }
+            lines.insert("## 来源：\(only)", at: insertAt)
+            lines.insert("", at: insertAt + 1)
+        }
+
+        // Remove per-entry source lines (only the indented ones written by this app).
+        lines.removeAll(where: { isIndentedSourceLine($0) })
+    }
+
+    private static func demoteSingleSourceHeadingInPlace(lines: inout [String], source: String) {
+        // Remove existing source heading(s) and restore per-entry sources where missing.
+        // This is intentionally conservative: if the day mixes multiple sources, we keep per-entry lines
+        // to avoid losing information.
+        let headingTrimmed = source.oeiTrimmed()
+        if headingTrimmed.isEmpty { return }
+
+        // 1) Remove heading lines ("## 来源：..." / "### 来源：...") and any immediate blank line after them.
+        var i = 0
+        while i < lines.count {
+            let t = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.hasPrefix("## 来源：") || t.hasPrefix("### 来源：") {
+                lines.remove(at: i)
+                if i < lines.count, lines[i].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    lines.remove(at: i)
+                }
+                continue
+            }
+            i += 1
+        }
+
+        // 2) For each entry block, if it lacks an indented source line, append one.
+        func isEntryHead(_ raw: String) -> Bool {
+            raw.trimmingCharacters(in: .whitespaces).hasPrefix("- [")
+        }
+        func isIndentedSourceLine(_ raw: String) -> Bool {
+            raw.hasPrefix("  - 来源：") || raw.hasPrefix("\t- 来源：")
+        }
+
+        var idx = 0
+        while idx < lines.count {
+            if !isEntryHead(lines[idx]) {
+                idx += 1
+                continue
+            }
+
+            var end = idx + 1
+            while end < lines.count {
+                let t = lines[end].trimmingCharacters(in: .whitespacesAndNewlines)
+                if t.hasPrefix("- [") || t.hasPrefix("## ") {
+                    break
+                }
+                end += 1
+            }
+
+            var hasSource = false
+            if idx < end {
+                for k in (idx + 1)..<end where isIndentedSourceLine(lines[k]) {
+                    hasSource = true
+                    break
+                }
+            }
+
+            if !hasSource {
+                lines.insert("  - 来源：\(headingTrimmed)", at: end)
+                end += 1
+            }
+
+            idx = end
+        }
     }
 
     private static func upsertOverviewPlaceholder(lines: inout [String]) -> Int {
@@ -695,6 +901,7 @@ struct MarkdownUpdater {
     private static func renderVocabEntry(_ v: VocabClip) -> [String] {
         let word = v.word.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
         let translation = v.translation.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
+        let source = v.source?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces() ?? ""
 
         let head: String
         if let p = v.phonetic?.oeiTrimmed(), !p.isEmpty {
@@ -708,11 +915,14 @@ struct MarkdownUpdater {
             head = "- [ ] \(word)"
         }
 
-        return [
+        var out: [String] = [
             head,
-            "  - \u{91ca}\u{4e49}\u{ff1a}\(translation)", // 释义：
-            "  - id: \(v.id)"
+            "  - \u{91ca}\u{4e49}\u{ff1a}\(translation) <!-- id: \(v.id) -->" // 释义：
         ]
+        if !source.isEmpty {
+            out.insert("  - \u{6765}\u{6e90}\u{ff1a}\(source)", at: out.count) // 来源：
+        }
+        return out
     }
 
     private static func renderSentenceEntry(_ s: SentenceClip, highlightTokenSet: Set<String>, relatedWords: [String]) -> [String] {
@@ -723,7 +933,7 @@ struct MarkdownUpdater {
         var out: [String] = []
         out.reserveCapacity(6)
         out.append("- [ ] \(sentence)")
-        out.append("  - \u{4e2d}\u{6587}\u{ff1a}\(translation)") // 中文：
+        out.append("  - \u{4e2d}\u{6587}\u{ff1a}\(translation) <!-- id: \(s.id) -->") // 中文：
         if let url = s.url?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces(), !url.isEmpty {
             out.append("  - \u{6765}\u{6e90}\u{ff1a}\(url)") // 来源：
         }
@@ -731,7 +941,6 @@ struct MarkdownUpdater {
             let joined = relatedWords.joined(separator: ", ")
             out.append("  - \u{76f8}\u{5173}\u{8bcd}\u{ff1a}\(joined)") // 相关词：
         }
-        out.append("  - id: \(s.id)")
         return out
     }
 

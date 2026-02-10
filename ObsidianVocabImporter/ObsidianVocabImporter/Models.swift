@@ -82,6 +82,7 @@ struct VocabClip: Identifiable, Hashable, Sendable {
     let word: String
     let phonetic: String?
     let translation: String
+    let source: String? // optional: URL / timestamp / free-form note (e.g. YouTube)
     let date: String // yyyy-MM-dd
 
     static func makeID(word: String) -> String {

@@ -32,6 +32,7 @@ enum ReviewItemKind: Sendable {
 struct ReviewItem: Identifiable, Hashable, Sendable {
     let id: String // vocab_xxx / sent_xxx
     let kind: ReviewItemKind
+    let isChecked: Bool
     let english: String
     let chinese: String
     let source: String
@@ -85,7 +86,7 @@ final class ReviewModeViewModel: ObservableObject {
             let text = VaultUtilities.readTextFileLossy(fileURL)
             let parsed: [ReviewItem]
             if let text {
-                parsed = Self.parseUncheckedItems(markdown: text)
+                parsed = Self.parseItems(markdown: text)
             } else {
                 parsed = []
             }
@@ -103,7 +104,7 @@ final class ReviewModeViewModel: ObservableObject {
                 self.items = parsed
                 self.currentIndex = 0
                 self.revealed = false
-                self.statusText = parsed.isEmpty ? "没有未勾选条目（或文件内未包含 id）。" : "已加载：\(parsed.count) 条未勾选"
+                self.statusText = parsed.isEmpty ? "当天文件内没有可识别条目（或未包含 id）。" : "已加载：\(parsed.count) 条"
             }
         }
     }
@@ -158,7 +159,7 @@ final class ReviewModeViewModel: ObservableObject {
         return DateParsing.formatYMD(year: year, month: month, day: day)
     }
 
-    nonisolated private static func parseUncheckedItems(markdown: String) -> [ReviewItem] {
+    nonisolated static func parseItems(markdown: String) -> [ReviewItem] {
         let text = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let lines = text.components(separatedBy: "\n")
 
@@ -224,10 +225,18 @@ final class ReviewModeViewModel: ObservableObject {
         }
 
         func value(after prefix: String, in blockLines: [String]) -> String {
+            func stripTrailingComments(_ s: String) -> String {
+                // IDs are stored as inline HTML comments like: <!-- id: sent_xxx -->
+                // Keep UI clean by stripping trailing comments.
+                if let r = s.range(of: "<!--") {
+                    return String(s[..<r.lowerBound]).oeiTrimmed()
+                }
+                return s
+            }
             for raw in blockLines {
                 let t = raw.trimmingCharacters(in: .whitespaces)
                 if t.hasPrefix(prefix) {
-                    return String(t.dropFirst(prefix.count)).oeiTrimmed()
+                    return stripTrailingComments(String(t.dropFirst(prefix.count)).oeiTrimmed())
                 }
             }
             return ""
@@ -237,17 +246,24 @@ final class ReviewModeViewModel: ObservableObject {
         out.reserveCapacity(128)
 
         var section: SectionKind = .none
+        var globalSource: String = ""
         var i = 0
         while i < lines.count {
             let trimmed = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("## 来源：") {
+                globalSource = String(trimmed.dropFirst("## 来源：".count)).oeiTrimmed()
+                i += 1
+                continue
+            }
             if trimmed.hasPrefix("## ") {
                 section = sectionKind(for: trimmed)
                 i += 1
                 continue
             }
 
-            let isActiveSection = (section == .activeVocab || section == .activeSentences || section == .activeReview)
-            if isActiveSection, trimmed.hasPrefix("- [ ]") {
+            let isIncludedSection = (section == .activeVocab || section == .activeSentences || section == .activeReview || section == .mastered)
+            if isIncludedSection, trimmed.hasPrefix("- ["), trimmed.contains("]") {
+                let isChecked = trimmed.lowercased().hasPrefix("- [x]")
                 let startLine = lines[i]
                 var block: [String] = [startLine]
                 i += 1
@@ -279,8 +295,11 @@ final class ReviewModeViewModel: ObservableObject {
                     chinese = value(after: "- 中文：", in: block)
                 }
 
-                let source = value(after: "- 来源：", in: block)
-                out.append(ReviewItem(id: id, kind: kind, english: english, chinese: chinese, source: source))
+                var source = value(after: "- 来源：", in: block)
+                if source.isEmpty {
+                    source = globalSource
+                }
+                out.append(ReviewItem(id: id, kind: kind, isChecked: isChecked, english: english, chinese: chinese, source: source))
                 continue
             }
 
@@ -337,15 +356,14 @@ struct ReviewModeView: View {
                         Text(item.kind.displayName)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(item.id)
-                            .font(.system(.footnote, design: .monospaced))
+                        Text(item.isChecked ? "已勾选" : "未勾选")
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
+                        Spacer()
                     }
 
                     Text(displayEnglish(item))
                         .font(.system(size: 22, weight: .semibold, design: .default))
-                        .textSelection(.enabled)
 
                     HStack(spacing: 8) {
                         Text(item.kind == .sentence ? "中文" : "释义")
@@ -354,7 +372,6 @@ struct ReviewModeView: View {
                             .frame(width: 48, alignment: .leading)
                         Text(displayChinese(item))
                             .font(.system(.body, design: .default))
-                            .textSelection(.enabled)
                     }
 
                     if !item.source.isEmpty {
@@ -366,7 +383,6 @@ struct ReviewModeView: View {
                             Text(item.source)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
                         }
                     }
 
@@ -406,7 +422,8 @@ struct ReviewModeView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 860, minHeight: 720)
+        // Keep the UI usable on smaller screens/windows.
+        .frame(minWidth: 520, minHeight: 360)
         .onAppear {
             // Avoid auto-loading on every tab switch; only load once when empty.
             if vm.items.isEmpty && vm.statusText.isEmpty {

@@ -37,7 +37,11 @@ final class MomoExportIndexStore {
                 return Set(decoded.vocab)
             } catch {
                 // Resilient to sync conflicts / manual edits.
-                try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                do {
+                    try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                } catch {
+                    // Best-effort backup only; keep going with empty set.
+                }
 
                 let f = DateFormatter()
                 f.locale = Locale(identifier: "en_US_POSIX")
@@ -45,7 +49,17 @@ final class MomoExportIndexStore {
                 let ts = f.string(from: Date())
                 let name = "\(VaultSupportPaths.momoExportIndexFileName).corrupt-\(ts)-\(UUID().uuidString).bak"
                 let backupURL = backupDir.appendingPathComponent(name, isDirectory: false)
-                try? fm.moveItem(at: url, to: backupURL)
+                do {
+                    try fm.moveItem(at: url, to: backupURL)
+                } catch {
+                    // If move fails, fall back to copy+delete.
+                    do {
+                        try fm.copyItem(at: url, to: backupURL)
+                        try fm.removeItem(at: url)
+                    } catch {
+                        // Best-effort.
+                    }
+                }
                 return []
             }
         }

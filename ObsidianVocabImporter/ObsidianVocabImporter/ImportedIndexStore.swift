@@ -59,7 +59,11 @@ final class ImportedIndexStore {
             } catch {
                 // Be resilient to sync conflicts / manual edits that corrupt JSON.
                 // Keep a backup so the user can inspect what went wrong.
-                try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                do {
+                    try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+                } catch {
+                    // Best-effort backup only; keep going with empty sets.
+                }
 
                 let f = DateFormatter()
                 f.locale = Locale(identifier: "en_US_POSIX")
@@ -67,7 +71,17 @@ final class ImportedIndexStore {
                 let ts = f.string(from: Date())
                 let name = "\(VaultSupportPaths.importedIndexFileName).corrupt-\(ts)-\(UUID().uuidString).bak"
                 let backupURL = backupDir.appendingPathComponent(name, isDirectory: false)
-                try? fm.moveItem(at: url, to: backupURL)
+                do {
+                    try fm.moveItem(at: url, to: backupURL)
+                } catch {
+                    // If move fails (permissions, cross-volume, existing file), try copy+delete.
+                    do {
+                        try fm.copyItem(at: url, to: backupURL)
+                        try fm.removeItem(at: url)
+                    } catch {
+                        // Still best-effort.
+                    }
+                }
                 return IndexSets(sentences: [], vocab: [])
             }
         }

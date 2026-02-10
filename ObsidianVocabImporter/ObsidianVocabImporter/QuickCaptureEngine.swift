@@ -19,6 +19,9 @@ struct QuickCaptureInput: Sendable {
     let text: String
     let translation: String
     let source: String
+    // When capturing a word/phrase, optionally save the full sentence alongside it.
+    // This is commonly used when watching YouTube subtitles/transcripts.
+    let contextSentence: String
     let dateYMD: String
 }
 
@@ -119,15 +122,9 @@ enum QuickCaptureEngine {
 
             var needsFullScan = false
             if !primaryIndexExists {
+                // Correctness over performance: if the primary index is missing, always scan existing notes
+                // (under the app-managed output root) to avoid cross-day duplicates.
                 needsFullScan = true
-                if legacyIndexExists {
-                    var sampleS: Set<String> = []
-                    var sampleV: Set<String> = []
-                    scanFiles(enumerateMarkdownFiles(limit: sampleLimit), into: &sampleS, &sampleV)
-                    if sampleS.subtracting(index.sentences).isEmpty, sampleV.subtracting(index.vocab).isEmpty {
-                        needsFullScan = false
-                    }
-                }
             } else {
                 var sampleS: Set<String> = []
                 var sampleV: Set<String> = []
@@ -171,7 +168,9 @@ enum QuickCaptureEngine {
             throw NSError(domain: "OEI", code: 801, userInfo: [NSLocalizedDescriptionKey: "内容为空。"])
         }
 
-        let id: String
+        // Some capture flows can write both a vocab item and a sentence. Keep a "primary" id for UX.
+        var id: String = ""
+        var displayText: String = ""
         var newSentences: [SentenceClip] = []
         var newVocab: [VocabClip] = []
 
@@ -182,28 +181,58 @@ enum QuickCaptureEngine {
                 throw NSError(domain: "OEI", code: 801, userInfo: [NSLocalizedDescriptionKey: "内容为空。"])
             }
 
-            id = VocabClip.makeID(word: cleanedWord)
-            if index.vocab.contains(id) {
+            let vocabID = VocabClip.makeID(word: cleanedWord)
+            displayText = cleanedWord
+            let sourceField = input.source.oeiTrimmed()
+            let sourceOrNil = sourceField.isEmpty ? nil : sourceField
+
+            let ctxSentenceRaw = input.contextSentence.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
+            let ctxSentenceOrNil = ctxSentenceRaw.isEmpty ? nil : ctxSentenceRaw
+
+            var vocabCandidate: VocabClip? = VocabClip(
+                id: vocabID,
+                word: cleanedWord,
+                phonetic: nil,
+                translation: input.translation,
+                // If we also save a full sentence in the same capture, keep the source on the
+                // sentence block only to avoid repeating it twice in Review.md.
+                source: (ctxSentenceOrNil == nil ? sourceOrNil : nil),
+                date: input.dateYMD
+            )
+
+            var sentenceCandidate: SentenceClip?
+            if let s = ctxSentenceOrNil {
+                let sid = SentenceClip.makeID(sentence: s, url: sourceOrNil)
+                sentenceCandidate = SentenceClip(id: sid, sentence: s, translation: "", url: sourceOrNil, date: input.dateYMD)
+            }
+
+            // Index-level dedup: if one side is duplicate, still allow capturing the other side.
+            if index.vocab.contains(vocabID) {
+                vocabCandidate = nil
+            }
+            if let s = sentenceCandidate, index.sentences.contains(s.id) {
+                sentenceCandidate = nil
+            }
+
+            // Pick a stable "primary" id for UX (message/return), matching what we intend to write.
+            id = vocabCandidate?.id ?? sentenceCandidate?.id ?? vocabID
+
+            if vocabCandidate == nil, sentenceCandidate == nil {
                 if shouldPersistIndexBeforeEarlyReturn {
                     // Best-effort persist of self-heal / legacy promotion even when the capture is a no-op.
                     try? indexStore.save(index)
                 }
                 return QuickCaptureResult(outcome: .skippedIndexDuplicate, message: "已存在（历史索引查重）：\(cleanedWord)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
             }
-            newVocab = [
-                VocabClip(
-                    id: id,
-                    word: cleanedWord,
-                    phonetic: nil,
-                    translation: input.translation,
-                    date: input.dateYMD
-                )
-            ]
+
+            newVocab = vocabCandidate.map { [$0] } ?? []
+            newSentences = sentenceCandidate.map { [$0] } ?? []
 
         case .sentence:
             let sourceField = input.source.oeiTrimmed()
             let sourceOrNil = sourceField.isEmpty ? nil : sourceField
             id = SentenceClip.makeID(sentence: rawText, url: sourceOrNil)
+            displayText = rawText
             if index.sentences.contains(id) {
                 if shouldPersistIndexBeforeEarlyReturn {
                     // Best-effort persist of self-heal / legacy promotion even when the capture is a no-op.
@@ -240,7 +269,8 @@ enum QuickCaptureEngine {
             mode: .merged,
             newSentences: newSentences,
             newVocab: newVocab,
-            preferences: preferences
+            preferences: preferences,
+            frontmatterSource: "captured"
         )
 
         let updatedNormalized = update.updatedMarkdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
@@ -262,11 +292,14 @@ enum QuickCaptureEngine {
         index.vocab.formUnion(vids)
         try indexStore.save(index)
 
+        // If we wrote something, prefer returning the id that was actually appended.
+        let writtenID = update.appendedVocab.first?.id ?? update.appendedSentences.first?.id ?? id
+
         if update.appendedSentences.isEmpty && update.appendedVocab.isEmpty {
-            return QuickCaptureResult(outcome: .skippedFileDuplicate, message: "已存在（文件内查重）：\(rawText)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
+            return QuickCaptureResult(outcome: .skippedFileDuplicate, message: "已存在（文件内查重）：\(displayText)", outputURL: outputURL, relativeOutputPath: relPath, id: writtenID)
         }
 
-        return QuickCaptureResult(outcome: .added, message: "已写入：\(relPath)", outputURL: outputURL, relativeOutputPath: relPath, id: id)
+        return QuickCaptureResult(outcome: .added, message: "已写入：\(relPath)", outputURL: outputURL, relativeOutputPath: relPath, id: writtenID)
     }
 
     static func markWrongOnce(

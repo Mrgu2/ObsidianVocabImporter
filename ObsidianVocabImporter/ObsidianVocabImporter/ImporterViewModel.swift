@@ -51,6 +51,7 @@ final class ImporterViewModel: ObservableObject {
     private var workKind: WorkKind?
     private var activePreviewToken: UUID = UUID()
     private var pendingPreviewRefreshAfterWork: Bool = false
+    private var lastKnownPreferences: PreferencesSnapshot = PreferencesSnapshot.load()
 
     init() {
         let defaults = UserDefaults.standard
@@ -89,6 +90,16 @@ final class ImporterViewModel: ObservableObject {
         if missingInputHint == nil {
             schedulePreviewRefresh()
         }
+    }
+
+    func handleUserDefaultsDidChange() {
+        // UserDefaults can change for many reasons (e.g. window frame autosave during dragging).
+        // Only refresh the import preview when our own preferences actually change; otherwise the
+        // app can feel janky when moving/resizing the window.
+        let now = PreferencesSnapshot.load()
+        guard now != lastKnownPreferences else { return }
+        lastKnownPreferences = now
+        schedulePreviewRefresh()
     }
 
     var missingInputHint: String? {
@@ -134,7 +145,12 @@ final class ImporterViewModel: ObservableObject {
 
         // Don't create folders eagerly unless the user asks to open them.
         if !FileManager.default.fileExists(atPath: root.path) {
-            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            do {
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            } catch {
+                lastError = "无法创建输出目录：\(root.path)\n\(error.localizedDescription)"
+                return
+            }
         }
         NSWorkspace.shared.open(root)
     }
@@ -1223,7 +1239,8 @@ enum ImportPlanner {
                 mode: mode,
                 newSentences: newS,
                 newVocab: newV,
-                preferences: prefs
+                preferences: prefs,
+                frontmatterSource: "imported"
             )
 
             skippedFileDuplicates += (newS.count - update.appendedSentences.count)
@@ -1347,7 +1364,8 @@ enum ImportPlanner {
                     mode: plan.mode,
                     newSentences: day.newSentences,
                     newVocab: day.newVocab,
-                    preferences: plan.preferences
+                    preferences: plan.preferences,
+                    frontmatterSource: "imported"
                 )
 
                 skippedFileDuplicates += (day.newSentences.count - update.appendedSentences.count)
@@ -1668,6 +1686,7 @@ enum ImportPlanner {
                     word: word,
                     phonetic: phonetic,
                     translation: translation,
+                    source: nil,
                     date: date
                 )
             )

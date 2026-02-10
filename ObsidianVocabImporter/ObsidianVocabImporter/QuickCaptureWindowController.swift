@@ -7,7 +7,7 @@ final class QuickCaptureWindowController: NSWindowController {
     init() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
-            styleMask: [.titled, .closable, .utilityWindow],
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
@@ -40,4 +40,3 @@ final class QuickCaptureWindowController: NSWindowController {
         w.makeKeyAndOrderFront(nil)
     }
 }
-

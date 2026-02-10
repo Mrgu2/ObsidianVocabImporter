@@ -6,6 +6,7 @@ final class QuickCaptureViewModel: ObservableObject {
     @Published var kind: QuickCaptureKind = .sentence
     @Published var text: String = ""
     @Published var translation: String = ""
+    @Published var contextSentence: String = ""
     @Published var source: String = ""
     @Published var date: Date = Date()
 
@@ -23,18 +24,45 @@ final class QuickCaptureViewModel: ObservableObject {
         let pb = NSPasteboard.general
         let s = pb.string(forType: .string) ?? ""
         let trimmed = s.oeiTrimmed()
-        text = trimmed
+        // Clipboard capture can come in 2 shapes:
+        // 1) Plain word/phrase (single or a few words)
+        // 2) Two-line format: first line is the selected word/phrase, second line is the full sentence
+        //    (useful when watching YouTube and wanting to save both in one shot).
+        if trimmed.contains("\n") {
+            let lines = trimmed
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+                .components(separatedBy: "\n")
+                .map { $0.oeiTrimmed() }
+                .filter { !$0.isEmpty }
+            if lines.count >= 2 {
+                text = lines[0]
+                contextSentence = lines.dropFirst().joined(separator: " ").oeiCompressWhitespaceToSingleSpaces()
+                kind = .vocabulary
+            } else {
+                text = trimmed
+                contextSentence = ""
+            }
+        } else {
+            text = trimmed
+            contextSentence = ""
+        }
         translation = ""
         source = ""
         date = Date()
         statusText = ""
 
-        if trimmed.contains(where: { $0.isWhitespace }) {
-            kind = .sentence
-        } else if trimmed.isEmpty {
-            kind = .sentence
-        } else {
-            kind = .vocabulary
+        // If the clipboard didn't indicate the two-line "word + sentence" format, infer kind.
+        if contextSentence.oeiTrimmed().isEmpty {
+            let wordCount = trimmed.split(whereSeparator: { $0.isWhitespace }).count
+            if trimmed.isEmpty {
+                kind = .sentence
+            } else if wordCount <= 4 {
+                // Treat short multi-word selections as phrases.
+                kind = .vocabulary
+            } else {
+                kind = .sentence
+            }
         }
     }
 
@@ -59,6 +87,7 @@ final class QuickCaptureViewModel: ObservableObject {
             text: text,
             translation: translation,
             source: source,
+            contextSentence: contextSentence,
             dateYMD: dateYMD
         )
 
@@ -125,6 +154,21 @@ struct QuickCaptureView: View {
             TextField(vm.kind == .sentence ? "中文（可选）" : "释义（可选）", text: $vm.translation)
                 .textFieldStyle(.roundedBorder)
 
+            if vm.kind == .vocabulary {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("完整句子（可选）")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $vm.contextSentence)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 64, maxHeight: 120)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(.quaternary, lineWidth: 1)
+                        )
+                }
+            }
+
             TextField("来源（可选：URL/字幕文件名/时间戳）", text: $vm.source)
                 .textFieldStyle(.roundedBorder)
 
@@ -152,7 +196,6 @@ struct QuickCaptureView: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .frame(minWidth: 640, minHeight: 420)
+        .frame(minWidth: 520, minHeight: 360)
     }
 }

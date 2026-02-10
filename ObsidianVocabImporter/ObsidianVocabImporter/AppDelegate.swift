@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import Darwin
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let captureWindow = QuickCaptureWindowController()
@@ -12,6 +13,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate let hotKeySignature: OSType = fourCharCode("OEIC")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // When launched from Xcode, libLogRedirect can redirect stdout/stderr into a pipe.
+        // If SwiftUI/AttributeGraph emits a large diagnostic during app shutdown (e.g. cycle dumps),
+        // a full pipe can block the main thread and make the app appear to hang on quit.
+        // Make stdio non-blocking in that environment to keep quitting responsive.
+        makeStandardIONonBlockingIfXcodeRedirected()
         registerHotKey()
     }
 
@@ -53,6 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     fileprivate func handleQuickCaptureHotKey() {
         captureWindow.show()
+    }
+
+    private func makeStandardIONonBlockingIfXcodeRedirected() {
+        let env = ProcessInfo.processInfo.environment
+        let inserts = env["DYLD_INSERT_LIBRARIES"] ?? ""
+        // Heuristic: these are injected by Xcode when launching under the debugger.
+        let likelyXcodeRedirect = inserts.contains("libLogRedirect") || inserts.contains("libMainThreadChecker") || inserts.contains("libViewDebuggerSupport")
+        guard likelyXcodeRedirect else { return }
+
+        for fd in [STDOUT_FILENO, STDERR_FILENO] {
+            let flags = fcntl(fd, F_GETFL, 0)
+            guard flags >= 0 else { continue }
+            _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+        }
     }
 }
 

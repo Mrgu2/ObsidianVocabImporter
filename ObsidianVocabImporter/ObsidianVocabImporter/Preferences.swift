@@ -30,7 +30,7 @@ enum Defaults {
     static let addMasteredTag = false
 }
 
-struct PreferencesSnapshot: Sendable {
+struct PreferencesSnapshot: Sendable, Equatable {
     let outputRootRelativePath: String
     let organizeByDateFolder: Bool
     let yearCompletionStrategy: YearCompletionStrategy
