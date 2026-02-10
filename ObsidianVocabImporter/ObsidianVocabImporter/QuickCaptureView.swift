@@ -20,6 +20,45 @@ final class QuickCaptureViewModel: ObservableObject {
         vaultURLOverride ?? VaultUtilities.persistedVaultURL()
     }
 
+    private func containsHan(_ s: String) -> Bool {
+        for scalar in s.unicodeScalars {
+            let v = scalar.value
+            // CJK Unified Ideographs + Extension A (good enough heuristic for zh meanings).
+            if (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func looksLikeSentence(_ s: String) -> Bool {
+        let t = s.oeiTrimmed()
+        if t.count >= 50 { return true }
+        let wordCount = t.split(whereSeparator: { $0.isWhitespace }).count
+        if wordCount >= 6 { return true }
+        // Typical sentence punctuation.
+        if t.contains(".") || t.contains("!") || t.contains("?") { return true }
+        if t.contains("。") || t.contains("！") || t.contains("？") { return true }
+        return false
+    }
+
+    private func splitInlineWordAndTranslation(_ s: String) -> (word: String, translation: String)? {
+        // Common clipboard formats from dictionaries/flashcard tools.
+        // Keep it conservative: only split when there is an obvious delimiter and both sides non-empty.
+        let candidates = ["\t", " - ", " – ", " — ", " : ", " ： ", ":", "："]
+        for sep in candidates {
+            let parts = s.components(separatedBy: sep)
+            if parts.count >= 2 {
+                let left = parts[0].oeiTrimmed()
+                let right = parts.dropFirst().joined(separator: sep).oeiTrimmed()
+                if !left.isEmpty && !right.isEmpty {
+                    return (left, right)
+                }
+            }
+        }
+        return nil
+    }
+
     func resetFromClipboard() {
         let pb = NSPasteboard.general
         let s = pb.string(forType: .string) ?? ""
@@ -35,25 +74,56 @@ final class QuickCaptureViewModel: ObservableObject {
                 .components(separatedBy: "\n")
                 .map { $0.oeiTrimmed() }
                 .filter { !$0.isEmpty }
-            if lines.count >= 2 {
-                text = lines[0]
-                contextSentence = lines.dropFirst().joined(separator: " ").oeiCompressWhitespaceToSingleSpaces()
+            if lines.count == 2 {
+                // Ambiguous: could be (word, meaning) or (word, sentence).
+                // Heuristic: if the 2nd line contains Chinese and doesn't look like a sentence, treat it as meaning.
+                let l1 = lines[0]
+                let l2 = lines[1]
+                text = l1
+                if containsHan(l2) && !looksLikeSentence(l2) && !containsHan(l1) {
+                    translation = l2.oeiCompressWhitespaceToSingleSpaces()
+                    contextSentence = ""
+                } else {
+                    translation = ""
+                    contextSentence = l2.oeiCompressWhitespaceToSingleSpaces()
+                }
+                kind = .vocabulary
+            } else if lines.count >= 3 {
+                // Prefer: first line = word, remaining = context sentence (joined).
+                // If the remaining lines are mostly Chinese and short, treat them as meaning.
+                let l1 = lines[0]
+                let rest = Array(lines.dropFirst())
+                text = l1
+                let restJoined = rest.joined(separator: " ").oeiCompressWhitespaceToSingleSpaces()
+                if containsHan(restJoined) && !looksLikeSentence(restJoined) && restJoined.count <= 80 && !containsHan(l1) {
+                    translation = restJoined
+                    contextSentence = ""
+                } else {
+                    translation = ""
+                    contextSentence = restJoined
+                }
                 kind = .vocabulary
             } else {
                 text = trimmed
+                translation = ""
                 contextSentence = ""
             }
+        } else if let split = splitInlineWordAndTranslation(trimmed), containsHan(split.translation) {
+            text = split.word
+            translation = split.translation
+            contextSentence = ""
+            kind = .vocabulary
         } else {
             text = trimmed
+            translation = ""
             contextSentence = ""
         }
-        translation = ""
         source = ""
         date = Date()
         statusText = ""
 
-        // If the clipboard didn't indicate the two-line "word + sentence" format, infer kind.
-        if contextSentence.oeiTrimmed().isEmpty {
+        // If the clipboard didn't indicate a specific format, infer kind.
+        if kind != .vocabulary {
             let wordCount = trimmed.split(whereSeparator: { $0.isWhitespace }).count
             if trimmed.isEmpty {
                 kind = .sentence
