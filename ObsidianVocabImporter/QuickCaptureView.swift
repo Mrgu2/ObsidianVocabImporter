@@ -12,9 +12,14 @@ final class QuickCaptureViewModel: ObservableObject {
 
     @Published var statusText: String = ""
     @Published var isWorking: Bool = false
+    @Published var isLookingUpMeaning: Bool = false
+    @Published var meaningLookupHint: String = ""
 
     // If nil, fall back to persisted vault selection.
     var vaultURLOverride: URL?
+
+    private var lastLookupKey: String = ""
+    private var pendingLookupTask: Task<Void, Never>?
 
     func resolvedVaultURL() -> URL? {
         vaultURLOverride ?? VaultUtilities.persistedVaultURL()
@@ -57,6 +62,81 @@ final class QuickCaptureViewModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    private func sanitizeLookupTerm(_ raw: String) -> String {
+        var s = raw.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
+        if s.isEmpty { return s }
+
+        let wrappers: Set<Character> = [
+            "\"", "'", "“", "”", "‘", "’",
+            "(", ")", "[", "]", "{", "}", "<", ">",
+            "（", "）", "【", "】", "「", "」", "『", "』", "《", "》",
+            ",", ".", "!", "?", ":", ";",
+            "，", "。", "！", "？", "：", "；",
+            "…", "—", "–", "-", "·"
+        ]
+
+        while let first = s.first, wrappers.contains(first) {
+            s.removeFirst()
+            s = s.oeiTrimmed()
+        }
+        while let last = s.last, wrappers.contains(last) {
+            s.removeLast()
+            s = s.oeiTrimmed()
+        }
+
+        return s.oeiCompressWhitespaceToSingleSpaces()
+    }
+
+    func scheduleMeaningLookupDebounced() {
+        pendingLookupTask?.cancel()
+        pendingLookupTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.lookupMeaningFromSystemDictionaryIfNeeded(force: false)
+            }
+        }
+    }
+
+    func lookupMeaningFromSystemDictionaryIfNeeded(force: Bool = false) {
+        meaningLookupHint = ""
+
+        guard kind == .vocabulary else { return }
+        guard !isWorking, !isLookingUpMeaning else { return }
+        if !force, !translation.oeiTrimmed().isEmpty { return }
+
+        let term = sanitizeLookupTerm(text)
+        guard !term.isEmpty else { return }
+        guard term.count <= 80 else { return }
+        guard !containsHan(term) else { return }
+        guard !looksLikeSentence(term) else { return }
+
+        let prefs = PreferencesSnapshot.load()
+        let lookupMode = prefs.dictionaryLookupMode
+
+        let key = "\(kind.rawValue)|\(term.lowercased())"
+        if !force, key == lastLookupKey { return }
+        lastLookupKey = key
+
+        isLookingUpMeaning = true
+
+        Task.detached(priority: .userInitiated) {
+            let meaning = SystemDictionaryLookup.lookupMeaningSingleLine(term: term, mode: lookupMode)
+            await MainActor.run {
+                self.isLookingUpMeaning = false
+                if let meaning, !meaning.isEmpty {
+                    // Only fill when still empty to avoid racing with user input.
+                    if self.translation.oeiTrimmed().isEmpty {
+                        self.translation = meaning
+                    }
+                    self.meaningLookupHint = "已从系统词典填充释义"
+                } else {
+                    self.meaningLookupHint = "系统词典未找到释义（可在 macOS“词典”App 里安装英汉词典）"
+                }
+            }
+        }
     }
 
     func resetFromClipboard() {
@@ -121,6 +201,7 @@ final class QuickCaptureViewModel: ObservableObject {
         source = ""
         date = Date()
         statusText = ""
+        meaningLookupHint = ""
 
         // If the clipboard didn't indicate a specific format, infer kind.
         if kind != .vocabulary {
@@ -134,6 +215,9 @@ final class QuickCaptureViewModel: ObservableObject {
                 kind = .sentence
             }
         }
+
+        // Best-effort: if user only captured a word/phrase and didn't provide meaning, try system dictionary.
+        lookupMeaningFromSystemDictionaryIfNeeded(force: false)
     }
 
     func performCapture(onFinish: ((Result<QuickCaptureResult, Error>) -> Void)? = nil) {
@@ -186,6 +270,15 @@ struct QuickCaptureView: View {
     @ObservedObject var vm: QuickCaptureViewModel
     let onClose: (() -> Void)?
 
+    @AppStorage(PreferencesKeys.dictionaryLookupMode) private var dictionaryLookupModeRaw: String = Defaults.dictionaryLookupMode.rawValue
+
+    private var dictionaryLookupModeBinding: Binding<DictionaryLookupMode> {
+        Binding(
+            get: { DictionaryLookupMode(rawValue: dictionaryLookupModeRaw) ?? Defaults.dictionaryLookupMode },
+            set: { dictionaryLookupModeRaw = $0.rawValue }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -206,6 +299,9 @@ struct QuickCaptureView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: vm.kind) { _ in
+                    vm.lookupMeaningFromSystemDictionaryIfNeeded(force: false)
+                }
 
                 DatePicker("日期", selection: $vm.date, displayedComponents: .date)
                     .labelsHidden()
@@ -220,9 +316,41 @@ struct QuickCaptureView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(.quaternary, lineWidth: 1)
                 )
+                .onChange(of: vm.text) { _ in
+                    vm.scheduleMeaningLookupDebounced()
+                }
 
-            TextField(vm.kind == .sentence ? "中文（可选）" : "释义（可选）", text: $vm.translation)
-                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                TextField(vm.kind == .sentence ? "中文（可选）" : "释义（可选）", text: $vm.translation)
+                    .textFieldStyle(.roundedBorder)
+
+                if vm.kind == .vocabulary {
+                    Picker("词典", selection: dictionaryLookupModeBinding) {
+                        ForEach(DictionaryLookupMode.allCases) { m in
+                            Text(m.displayName).tag(m)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220)
+                    .onChange(of: dictionaryLookupModeRaw) { _ in
+                        // Try again under the new mode when translation is empty.
+                        vm.lookupMeaningFromSystemDictionaryIfNeeded(force: false)
+                    }
+
+                    Button("查词") { vm.lookupMeaningFromSystemDictionaryIfNeeded(force: true) }
+                        .disabled(vm.isWorking || vm.isLookingUpMeaning || vm.text.oeiTrimmed().isEmpty)
+                    if vm.isLookingUpMeaning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+
+            if vm.kind == .vocabulary, !vm.meaningLookupHint.isEmpty {
+                Text(vm.meaningLookupHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
 
             if vm.kind == .vocabulary {
                 VStack(alignment: .leading, spacing: 6) {

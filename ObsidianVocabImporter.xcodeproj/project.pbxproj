@@ -27,6 +27,7 @@
 		86437ABF1F9999AAC6222EF7 /* MomoExportIndexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02356AACA8EEABCD68225DE2 /* MomoExportIndexStore.swift */; };
 		942943B404038410BB4BE545 /* MomoWordExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F331E10880C5D0BE91850C /* MomoWordExporter.swift */; };
 		94DE6453AB337F6D067D0B0B /* ImportTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6F7155CC2597DD0221C39E /* ImportTabView.swift */; };
+		BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */; };
 		BAF0CF65B1FFD4A5BDAB514D /* VaultUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB329980F15ED49314797265 /* VaultUtilities.swift */; };
 		C8AC8270E2735EF31D0C5BDA /* QuickCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E739CFC3362D03CFF10D6E /* QuickCaptureView.swift */; };
 		CB29CD1EC82C3A1739B1C578 /* ImportedIndexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294A8A11D70D3D55194A5F49 /* ImportedIndexStore.swift */; };
@@ -52,6 +53,7 @@
 		8960A313EE90F987D60804CE /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		91F331E10880C5D0BE91850C /* MomoWordExporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MomoWordExporter.swift; sourceTree = "<group>"; };
 		98F5BA12166C3158C970B66D /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemDictionaryLookup.swift; sourceTree = "<group>"; };
 		A837F688C9417501EE09746E /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AA8EE5FE03F4BA07FBF7346F /* SubtitleImportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleImportView.swift; sourceTree = "<group>"; };
 		ABC8F1D7044EF133B6E769D3 /* ObsidianVocabImporterApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObsidianVocabImporterApp.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				98F5BA12166C3158C970B66D /* SettingsView.swift */,
 				AA8EE5FE03F4BA07FBF7346F /* SubtitleImportView.swift */,
 				B6684EEAF7AD6F9EA6C7278E /* SubtitleParser.swift */,
+				A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */,
 				CB329980F15ED49314797265 /* VaultUtilities.swift */,
 				D29F2798415FD0292EE266F7 /* Assets.xcassets */,
 			);
@@ -239,6 +242,7 @@
 				83E82DC6411E3DA2F20F0565 /* SettingsView.swift in Sources */,
 				31BF0E1A18E5B216EC583FAB /* SubtitleImportView.swift in Sources */,
 				4303A48B8335FE68C87E5C10 /* SubtitleParser.swift in Sources */,
+				BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */,
 				BAF0CF65B1FFD4A5BDAB514D /* VaultUtilities.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

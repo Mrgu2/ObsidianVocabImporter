@@ -123,7 +123,7 @@ final class ImporterViewModel: ObservableObject {
     }
 
     var canMomoExport: Bool {
-        vaultURL != nil && vocabCSVURL != nil
+        vaultURL != nil
     }
 
     private func persistURLPath(_ url: URL?, key: String) {
@@ -471,10 +471,7 @@ final class ImporterViewModel: ObservableObject {
             lastError = "缺少 Vault 文件夹（用于保存墨墨导出索引）。"
             return
         }
-        guard let vocabCSVURL else {
-            lastError = "缺少词汇 CSV。"
-            return
-        }
+        let prefs = PreferencesSnapshot.load()
 
         workKind = .momoExport
         isWorking = true
@@ -484,9 +481,9 @@ final class ImporterViewModel: ObservableObject {
         momoPreviewTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let vm = self else { return }
             do {
-                let preview = try MomoWordExporter.preparePreview(
+                let preview = try MomoWordExporter.preparePreviewFromVault(
                     vaultURL: vaultURL,
-                    vocabCSVURL: vocabCSVURL,
+                    preferences: prefs,
                     destination: nil,
                     progress: { p in
                         guard !Task.isCancelled else { return }
@@ -528,10 +525,7 @@ final class ImporterViewModel: ObservableObject {
             lastError = "缺少 Vault 文件夹（用于保存墨墨导出索引）。"
             return
         }
-        guard let vocabCSVURL else {
-            lastError = "缺少词汇 CSV。"
-            return
-        }
+        let prefs = PreferencesSnapshot.load()
 
         workKind = .momoExport
         isWorking = true
@@ -541,9 +535,9 @@ final class ImporterViewModel: ObservableObject {
         momoExportTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let vm = self else { return }
             do {
-                let summary = try MomoWordExporter.export(
+                let summary = try MomoWordExporter.exportFromVault(
                     vaultURL: vaultURL,
-                    vocabCSVURL: vocabCSVURL,
+                    preferences: prefs,
                     destination: .clipboard,
                     progress: { p in
                         guard !Task.isCancelled else { return }
@@ -590,10 +584,7 @@ final class ImporterViewModel: ObservableObject {
             lastError = "缺少 Vault 文件夹（用于保存墨墨导出索引）。"
             return
         }
-        guard let vocabCSVURL else {
-            lastError = "缺少词汇 CSV。"
-            return
-        }
+        let prefs = PreferencesSnapshot.load()
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -614,9 +605,9 @@ final class ImporterViewModel: ObservableObject {
         momoExportTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let vm = self else { return }
             do {
-                let summary = try MomoWordExporter.export(
+                let summary = try MomoWordExporter.exportFromVault(
                     vaultURL: vaultURL,
-                    vocabCSVURL: vocabCSVURL,
+                    preferences: prefs,
                     destination: .file(dest),
                     progress: { p in
                         guard !Task.isCancelled else { return }

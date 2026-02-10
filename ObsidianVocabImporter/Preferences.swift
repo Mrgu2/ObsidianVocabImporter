@@ -10,6 +10,9 @@ enum PreferencesKeys {
     static let highlightVocabInSentences = "oei.highlightVocabInSentences"
     static let autoArchiveMastered = "oei.autoArchiveMastered"
     static let addMasteredTag = "oei.addMasteredTag"
+
+    // Quick capture: system dictionary lookup behavior
+    static let dictionaryLookupMode = "oei.dictionaryLookupMode"
 }
 
 enum RecentSelectionKeys {
@@ -28,6 +31,25 @@ enum Defaults {
     static let highlightVocabInSentences = true
     static let autoArchiveMastered = true
     static let addMasteredTag = false
+
+    // Prefer zh meaning, but allow English fallback when zh dictionary has no entry.
+    static let dictionaryLookupMode: DictionaryLookupMode = .preferChineseThenEnglish
+}
+
+enum DictionaryLookupMode: String, CaseIterable, Identifiable, Sendable {
+    case preferChineseThenEnglish
+    case preferChineseOnly
+    case englishOnly
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .preferChineseThenEnglish: return "优先英汉（找不到则英语）"
+        case .preferChineseOnly: return "仅英汉（找不到则空）"
+        case .englishOnly: return "仅英语"
+        }
+    }
 }
 
 struct PreferencesSnapshot: Sendable, Equatable {
@@ -38,6 +60,7 @@ struct PreferencesSnapshot: Sendable, Equatable {
     let highlightVocabInSentences: Bool
     let autoArchiveMastered: Bool
     let addMasteredTag: Bool
+    let dictionaryLookupMode: DictionaryLookupMode
 
     static func load(from defaults: UserDefaults = .standard) -> PreferencesSnapshot {
         let rawRoot = defaults.string(forKey: PreferencesKeys.outputRootName) ?? Defaults.outputRootName
@@ -55,6 +78,9 @@ struct PreferencesSnapshot: Sendable, Equatable {
         let autoArchive = defaults.object(forKey: PreferencesKeys.autoArchiveMastered) as? Bool ?? Defaults.autoArchiveMastered
         let addTag = defaults.object(forKey: PreferencesKeys.addMasteredTag) as? Bool ?? Defaults.addMasteredTag
 
+        let rawDictMode = defaults.string(forKey: PreferencesKeys.dictionaryLookupMode) ?? Defaults.dictionaryLookupMode.rawValue
+        let dictMode = DictionaryLookupMode(rawValue: rawDictMode) ?? Defaults.dictionaryLookupMode
+
         return PreferencesSnapshot(
             outputRootRelativePath: root.isEmpty ? Defaults.outputRootName : root,
             organizeByDateFolder: organize,
@@ -62,7 +88,8 @@ struct PreferencesSnapshot: Sendable, Equatable {
             mergedLayoutStrategy: layout,
             highlightVocabInSentences: highlight,
             autoArchiveMastered: autoArchive,
-            addMasteredTag: addTag
+            addMasteredTag: addTag,
+            dictionaryLookupMode: dictMode
         )
     }
 }

@@ -196,7 +196,7 @@ final class ReviewModeViewModel: ObservableObject {
         func stripTrailingAppTags(_ s: String) -> String {
             // Only strip tags that this app writes automatically.
             // Do not split on '#' in general, otherwise words like "C#" would be truncated.
-            var t = s.oeiTrimmed()
+            var t = stripInlineAppComments(s).oeiTrimmed()
             while true {
                 if t.hasSuffix(" #wrong") {
                     t = String(t.dropLast(" #wrong".count)).oeiTrimmed()
@@ -207,6 +207,31 @@ final class ReviewModeViewModel: ObservableObject {
                     continue
                 }
                 break
+            }
+            return t
+        }
+
+        func stripInlineAppComments(_ s: String) -> String {
+            // Keep UI clean by stripping inline comments we use for internal IDs/metadata.
+            // Supports:
+            // - HTML comments: <!-- id: vocab_xxx -->
+            // - Obsidian comments: %% id: vocab_xxx %%
+            var t = s
+            while let r0 = t.range(of: "<!--") {
+                if let r1 = t.range(of: "-->", range: r0.lowerBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                    break
+                }
+            }
+            while let r0 = t.range(of: "%%") {
+                if let r1 = t.range(of: "%%", range: r0.upperBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                    break
+                }
             }
             return t
         }
@@ -226,17 +251,54 @@ final class ReviewModeViewModel: ObservableObject {
 
         func value(after prefix: String, in blockLines: [String]) -> String {
             func stripTrailingComments(_ s: String) -> String {
-                // IDs are stored as inline HTML comments like: <!-- id: sent_xxx -->
-                // Keep UI clean by stripping trailing comments.
-                if let r = s.range(of: "<!--") {
-                    return String(s[..<r.lowerBound]).oeiTrimmed()
-                }
-                return s
+                // IDs are stored as inline HTML comments (<!-- ... -->) or Obsidian comments (%% ... %%).
+                // Keep UI clean by stripping trailing/inline comments.
+                var t = s
+                if let r = t.range(of: "<!--") { t = String(t[..<r.lowerBound]) }
+                if let r = t.range(of: "%%") { t = String(t[..<r.lowerBound]) }
+                return t.oeiTrimmed()
             }
-            for raw in blockLines {
+
+            for (idx, raw) in blockLines.enumerated() {
                 let t = raw.trimmingCharacters(in: .whitespaces)
                 if t.hasPrefix(prefix) {
-                    return stripTrailingComments(String(t.dropFirst(prefix.count)).oeiTrimmed())
+                    let inline = stripTrailingComments(String(t.dropFirst(prefix.count)).oeiTrimmed())
+                    if !inline.isEmpty { return inline }
+
+                    // Multi-line format:
+                    //   - 释义：
+                    //     - ...
+                    //     - ...
+                    let indent = String(raw.prefix { $0 == " " || $0 == "\t" })
+                    let nestedPrefixA = indent + "  - "
+                    let nestedPrefixB = indent + "\t- "
+
+                    var nested: [String] = []
+                    var j = idx + 1
+                    while j < blockLines.count {
+                        let r2 = blockLines[j]
+
+                        // Stop at another metadata line at the same indentation level.
+                        if r2.hasPrefix(indent + "- "),
+                           !r2.hasPrefix(nestedPrefixA),
+                           !r2.hasPrefix(nestedPrefixB) {
+                            break
+                        }
+
+                        if r2.hasPrefix(nestedPrefixA) {
+                            let v = String(r2.dropFirst(nestedPrefixA.count))
+                            let cleaned = stripTrailingComments(v).oeiTrimmed()
+                            if !cleaned.isEmpty { nested.append(cleaned) }
+                        } else if r2.hasPrefix(nestedPrefixB) {
+                            let v = String(r2.dropFirst(nestedPrefixB.count))
+                            let cleaned = stripTrailingComments(v).oeiTrimmed()
+                            if !cleaned.isEmpty { nested.append(cleaned) }
+                        }
+
+                        j += 1
+                    }
+
+                    return nested.joined(separator: "\n")
                 }
             }
             return ""
@@ -365,13 +427,19 @@ struct ReviewModeView: View {
                     Text(displayEnglish(item))
                         .font(.system(size: 22, weight: .semibold, design: .default))
 
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         Text(item.kind == .sentence ? "中文" : "释义")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(width: 48, alignment: .leading)
-                        Text(displayChinese(item))
-                            .font(.system(.body, design: .default))
+                        ScrollView {
+                            Text(displayChinese(item))
+                                .font(.system(.body, design: .default))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxHeight: 260)
                     }
 
                     if !item.source.isEmpty {

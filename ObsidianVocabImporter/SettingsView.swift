@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(PreferencesKeys.highlightVocabInSentences) private var highlightVocabInSentences: Bool = Defaults.highlightVocabInSentences
     @AppStorage(PreferencesKeys.autoArchiveMastered) private var autoArchiveMastered: Bool = Defaults.autoArchiveMastered
     @AppStorage(PreferencesKeys.addMasteredTag) private var addMasteredTag: Bool = Defaults.addMasteredTag
+    @AppStorage(PreferencesKeys.dictionaryLookupMode) private var dictionaryLookupModeRaw: String = Defaults.dictionaryLookupMode.rawValue
 
     @State private var launchAtLoginEnabled: Bool = false
     @State private var launchAtLoginApprovalRequired: Bool = false
@@ -27,6 +28,13 @@ struct SettingsView: View {
         Binding(
             get: { MergedLayoutStrategy(rawValue: mergedLayoutStrategyRaw) ?? Defaults.mergedLayoutStrategy },
             set: { mergedLayoutStrategyRaw = $0.rawValue }
+        )
+    }
+
+    private var dictionaryLookupModeBinding: Binding<DictionaryLookupMode> {
+        Binding(
+            get: { DictionaryLookupMode(rawValue: dictionaryLookupModeRaw) ?? Defaults.dictionaryLookupMode },
+            set: { dictionaryLookupModeRaw = $0.rawValue }
         )
     }
 
@@ -99,6 +107,18 @@ struct SettingsView: View {
                     .disabled(!autoArchiveMastered)
 
                 Text("说明：\n- 先词后句：保持 Vocabulary 在前、Sentences 在后。\n- 按时间线交错：在同一分区交错排列词汇与句子（无真实时间戳时为“尽量交错”）。\n- 以句子为主：Sentences 在前，并在句子条目下展示相关词汇。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("快速捕获（查词）") {
+                Picker("词典", selection: dictionaryLookupModeBinding) {
+                    ForEach(DictionaryLookupMode.allCases) { m in
+                        Text(m.displayName).tag(m)
+                    }
+                }
+
+                Text("说明：当英汉词典查不到时，可以回退到英语词典，至少保证有释义。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

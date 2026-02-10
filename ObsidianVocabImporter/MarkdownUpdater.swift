@@ -115,6 +115,7 @@ struct MarkdownUpdater {
         // - Hide internal IDs from the rendered note while keeping them in-file for dedup/self-heal.
         // - For quick-captured notes, de-duplicate a single repeated source (e.g. a YouTube URL) by
         //   promoting it to one top-level heading.
+        normalizeVocabTranslationPresentationInPlace(lines: &lines)
         normalizeIDLinesInPlace(lines: &lines)
         normalizeCapturedSourcePresentationInPlace(lines: &lines)
 
@@ -383,50 +384,120 @@ struct MarkdownUpdater {
     }
 
     private static func normalizeIDLinesInPlace(lines: inout [String]) {
-        // Convert legacy ID lines into an inline HTML comment attached to the previous metadata line.
-        // This keeps IDs in-file for dedup/self-heal while avoiding extra noisy lines in the note.
-        func extractIDValue(from trimmed: String) -> String? {
-            if trimmed.hasPrefix("- id:") {
-                let v = String(trimmed.dropFirst("- id:".count)).oeiTrimmed()
-                return v.isEmpty ? nil : v
+        // Keep IDs in-file for dedup/self-heal, but hide them from Obsidian live preview and from our Review UI.
+        // We do this by storing IDs in Obsidian comments:
+        //   %% id: vocab_xxx %%
+        //
+        // This function also migrates legacy formats:
+        // - "- id: vocab_xxx"
+        // - "<!-- id: vocab_xxx -->" (standalone or inline)
+        //
+        // Target normalized format inside each entry block:
+        //   - [ ] head line %% id: vocab_xxx %%
+        //     - 释义：...
+
+        func stripIDCommentsFromLine(_ s: String) -> String {
+            var t = s
+            // Remove inline HTML id comments.
+            if let r0 = t.range(of: "<!-- id:") {
+                if let r1 = t.range(of: "-->", range: r0.lowerBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                }
             }
-            if trimmed.hasPrefix("<!-- id:") && trimmed.hasSuffix("-->") {
-                let v0 = trimmed.dropFirst("<!-- id:".count)
-                let v1 = String(v0.dropLast("-->".count)).oeiTrimmed()
-                let out = v1
-                return out.isEmpty ? nil : out
+            // Remove inline Obsidian id comments.
+            if let r0 = t.range(of: "%%") {
+                // Best-effort: drop from first %% to next %%.
+                if let r1 = t.range(of: "%%", range: r0.upperBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                }
+            }
+            // Also remove legacy "- id: ..." fragments if user pasted into same line.
+            if let r = t.range(of: "- id:") {
+                t = String(t[..<r.lowerBound])
+            }
+            // Trim trailing whitespace created by removals.
+            while t.last == " " || t.last == "\t" { t.removeLast() }
+            return t
+        }
+
+        func extractFirstID(from blockText: String) -> String? {
+            let ns = blockText as NSString
+            let range = NSRange(location: 0, length: ns.length)
+            if let m = vocabRegex.firstMatch(in: blockText, options: [], range: range) {
+                return ns.substring(with: m.range)
+            }
+            if let m = sentRegex.firstMatch(in: blockText, options: [], range: range) {
+                return ns.substring(with: m.range)
             }
             return nil
         }
 
+        func isEntryHeadLine(_ raw: String) -> Bool {
+            raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("- [")
+        }
+
+        func isHeadingLine(_ raw: String) -> Bool {
+            raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("## ")
+        }
+
+        func isLegacyIDOnlyLine(_ raw: String) -> Bool {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.hasPrefix("- id:") { return true }
+            if t.hasPrefix("<!-- id:") && t.hasSuffix("-->") { return true }
+            if t.hasPrefix("%%"), t.contains("id:"), t.hasSuffix("%%") { return true }
+            return false
+        }
+
         var i = 0
         while i < lines.count {
-            let raw = lines[i]
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let idValue = extractIDValue(from: trimmed) else {
+            if !isEntryHeadLine(lines[i]) {
                 i += 1
                 continue
             }
 
-            // Find a suitable line above to attach the inline comment to.
-            var j = i - 1
-            while j >= 0, lines[j].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                j -= 1
+            let headIdx = i
+            var end = headIdx + 1
+            while end < lines.count {
+                if isEntryHeadLine(lines[end]) || isHeadingLine(lines[end]) { break }
+                end += 1
             }
-            if j >= 0 {
-                let prevTrimmed = lines[j].trimmingCharacters(in: .whitespaces)
-                let canAttach = prevTrimmed.hasPrefix("- [") || prevTrimmed.hasPrefix("- 中文：") || prevTrimmed.hasPrefix("- 释义：") || prevTrimmed.hasPrefix("- 来源：") || prevTrimmed.hasPrefix("- 相关词：")
-                if canAttach, !lines[j].contains("<!-- id:") {
-                    lines[j] += " <!-- id: \(idValue) -->"
-                    lines.remove(at: i)
-                    continue
+
+            let block = Array(lines[headIdx..<end])
+            let blockText = block.joined(separator: "\n")
+            guard let id = extractFirstID(from: blockText) else {
+                i = end
+                continue
+            }
+
+            let desiredIDSuffix = " %% id: \(id) %%"
+
+            var rebuilt: [String] = []
+            rebuilt.reserveCapacity(block.count)
+
+            // 1) Head line: remove any inline id comments.
+            let headClean = stripIDCommentsFromLine(lines[headIdx])
+            rebuilt.append(headClean + desiredIDSuffix)
+
+            // 2) Keep the rest of the block, but drop any legacy id-only lines and strip inline id comments.
+            if headIdx + 1 < end {
+                for raw in lines[(headIdx + 1)..<end] {
+                    if isLegacyIDOnlyLine(raw) { continue }
+                    let cleaned = stripIDCommentsFromLine(raw)
+                    if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // Preserve blank lines only if they existed as real separators. Inside blocks,
+                        // blank lines tend to make markdown lists harder to read; drop them.
+                        continue
+                    }
+                    rebuilt.append(cleaned)
                 }
             }
 
-            // Fallback: keep it as a hidden comment line.
-            let indent = raw.prefix { $0 == " " || $0 == "\t" }
-            lines[i] = "\(indent)<!-- id: \(idValue) -->"
-            i += 1
+            lines.replaceSubrange(headIdx..<end, with: rebuilt)
+            i = headIdx + rebuilt.count
         }
     }
 
@@ -505,6 +576,91 @@ struct MarkdownUpdater {
 
         // Remove per-entry source lines (only the indented ones written by this app).
         lines.removeAll(where: { isIndentedSourceLine($0) })
+    }
+
+    private static func normalizeVocabTranslationPresentationInPlace(lines: inout [String]) {
+        // Reflow long one-line dictionary outputs into multi-line lists for readability.
+        // Only touches lines that start with our "  - 释义：" prefix.
+
+        func extractIDComment(from s: String) -> (content: String, idComment: String?) {
+            guard let r = s.range(of: "<!-- id:") else { return (s, nil) }
+            let left = String(s[..<r.lowerBound]).oeiTrimmed()
+            let right = String(s[r.lowerBound...]).oeiTrimmed()
+            return (left, right.isEmpty ? nil : right)
+        }
+
+        // Same heuristic as SystemDictionaryLookup: only strip pinyin tokens when we see tone marks.
+        let marks = "āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛÜ"
+        let pinyinMarks = CharacterSet(charactersIn: marks)
+        let tokenRe = try? NSRegularExpression(
+            pattern: #"\b[\p{Script=Latin}\p{M}'’\-]*["# + marks + #"][\p{Script=Latin}\p{M}'’\-]*\b[;,.!?]?"#,
+            options: []
+        )
+        func stripPinyinIfDetected(_ s: String) -> String {
+            guard s.rangeOfCharacter(from: pinyinMarks) != nil else { return s }
+            guard let tokenRe else { return s }
+            let ns = s as NSString
+            let full = NSRange(location: 0, length: ns.length)
+            let matches = tokenRe.matches(in: s, options: [], range: full)
+            if matches.isEmpty { return s }
+            var out = s
+            for m in matches.reversed() {
+                if let r = Range(m.range, in: out) {
+                    out.removeSubrange(r)
+                }
+            }
+            return out.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        }
+
+        var i = 0
+        while i < lines.count {
+            let raw = lines[i]
+            guard raw.hasPrefix("  - 释义：") || raw.hasPrefix("\t- 释义：") else {
+                i += 1
+                continue
+            }
+
+            // Already normalized form: "  - 释义： <!-- id: ... -->"
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("- 释义： <!-- id:") {
+                i += 1
+                continue
+            }
+
+            let indent = raw.prefix { $0 == " " || $0 == "\t" }
+            let afterPrefix: String
+            if raw.hasPrefix("  - 释义：") {
+                afterPrefix = String(raw.dropFirst("  - 释义：".count))
+            } else {
+                afterPrefix = String(raw.dropFirst("\t- 释义：".count))
+            }
+
+            var (content, idComment) = extractIDComment(from: afterPrefix)
+            content = stripPinyinIfDetected(content)
+            let formatted = formatVocabTranslationForMarkdownList(content)
+
+            if formatted.count <= 1 {
+                let c = (formatted.first ?? content).oeiTrimmed()
+                let idSuffix = idComment.map { " \($0)" } ?? ""
+                lines[i] = "\(indent)- 释义：\(c)\(idSuffix)"
+                i += 1
+                continue
+            }
+
+            let nestedIndent: String
+            if indent.contains("\t") {
+                nestedIndent = String(indent) + "\t"
+            } else {
+                nestedIndent = String(indent) + "  "
+            }
+
+            let idSuffix = idComment.map { " \($0)" } ?? ""
+            lines[i] = "\(indent)- 释义：\(idSuffix)"
+
+            let nested = formatted.map { "\(nestedIndent)- \($0)" }
+            lines.insert(contentsOf: nested, at: i + 1)
+            i += 1 + nested.count
+        }
     }
 
     private static func demoteSingleSourceHeadingInPlace(lines: inout [String], source: String) {
@@ -898,9 +1054,54 @@ struct MarkdownUpdater {
 
     // MARK: - Rendering
 
+    private static func formatVocabTranslationForMarkdownList(_ raw: String) -> [String] {
+        let t = raw.oeiTrimmed()
+        if t.isEmpty { return [] }
+
+        let hasHan: Bool = t.unicodeScalars.contains(where: { scalar in
+            let v = scalar.value
+            return (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v)
+        })
+
+        // Break on common dictionary sense markers to improve readability.
+        let markers = Set("①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳")
+        let bullets: Set<Character> = ["•"]
+
+        var out: String = ""
+        out.reserveCapacity(min(4096, t.count + 32))
+
+        var prevWasNewline = true
+        for ch in t {
+            // When the definition is long, semicolons are often good split points (examples/usages).
+            // Only do this when the text includes Chinese so we don't over-split pure English strings.
+            if hasHan, (ch == "；" || ch == ";"), !prevWasNewline {
+                out.append(ch)
+                out.append("\n")
+                prevWasNewline = true
+                continue
+            }
+            if (markers.contains(ch) || bullets.contains(ch)) && !prevWasNewline {
+                out.append("\n")
+            }
+            out.append(ch)
+            prevWasNewline = (ch == "\n")
+        }
+
+        // Normalize whitespace within each line but preserve line boundaries.
+        let lines = out
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0).oeiTrimmed() }
+            .map { $0.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
+            .filter { !$0.isEmpty }
+
+        return lines
+    }
+
     private static func renderVocabEntry(_ v: VocabClip) -> [String] {
         let word = v.word.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
-        let translation = v.translation.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
+        let translationRaw = v.translation.oeiTrimmed()
         let source = v.source?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces() ?? ""
 
         let head: String
@@ -915,10 +1116,17 @@ struct MarkdownUpdater {
             head = "- [ ] \(word)"
         }
 
-        var out: [String] = [
-            head,
-            "  - \u{91ca}\u{4e49}\u{ff1a}\(translation) <!-- id: \(v.id) -->" // 释义：
-        ]
+        // Keep IDs in-file for dedup/self-heal, but hide them from Obsidian live preview and from our Review UI.
+        var out: [String] = ["\(head) %% id: \(v.id) %%"]
+
+        let translationLines = formatVocabTranslationForMarkdownList(translationRaw)
+        if translationLines.count <= 1 {
+            let translation = (translationLines.first ?? "").oeiTrimmed()
+            out.append("  - \u{91ca}\u{4e49}\u{ff1a}\(translation)") // 释义：
+        } else {
+            out.append("  - \u{91ca}\u{4e49}\u{ff1a}") // 释义：
+            out.append(contentsOf: translationLines.map { "    - \($0)" })
+        }
         if !source.isEmpty {
             out.insert("  - \u{6765}\u{6e90}\u{ff1a}\(source)", at: out.count) // 来源：
         }
@@ -932,8 +1140,8 @@ struct MarkdownUpdater {
 
         var out: [String] = []
         out.reserveCapacity(6)
-        out.append("- [ ] \(sentence)")
-        out.append("  - \u{4e2d}\u{6587}\u{ff1a}\(translation) <!-- id: \(s.id) -->") // 中文：
+        out.append("- [ ] \(sentence) %% id: \(s.id) %%")
+        out.append("  - \u{4e2d}\u{6587}\u{ff1a}\(translation)") // 中文：
         if let url = s.url?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces(), !url.isEmpty {
             out.append("  - \u{6765}\u{6e90}\u{ff1a}\(url)") // 来源：
         }
@@ -1021,7 +1229,28 @@ struct MarkdownUpdater {
     private static func stripTrailingAppTags(_ s: String) -> String {
         // Only strip tags that this app writes automatically.
         // Do not split on '#' in general, otherwise words like "C#" would be truncated.
-        var t = s.oeiTrimmed()
+        func stripInlineAppComments(_ s: String) -> String {
+            var t = s
+            while let r0 = t.range(of: "<!--") {
+                if let r1 = t.range(of: "-->", range: r0.lowerBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                    break
+                }
+            }
+            while let r0 = t.range(of: "%%") {
+                if let r1 = t.range(of: "%%", range: r0.upperBound..<t.endIndex) {
+                    t.removeSubrange(r0.lowerBound..<r1.upperBound)
+                } else {
+                    t = String(t[..<r0.lowerBound])
+                    break
+                }
+            }
+            return t
+        }
+
+        var t = stripInlineAppComments(s).oeiTrimmed()
         while true {
             if t.hasSuffix(" #wrong") {
                 t = String(t.dropLast(" #wrong".count)).oeiTrimmed()

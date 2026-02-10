@@ -268,15 +268,9 @@ struct ImportTabView: View {
     private var momoSection: some View {
         GroupBox("墨墨单词本导出（纯单词）") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("从词汇 CSV 导出“纯单词（一行一个）”，适合直接粘贴到墨墨单词本的“词本正文”。导出会去重：同一单词多次导出只会输出一次。")
+                Text("从 Vault 扫描词汇条目并导出“纯单词（一行一个）”，适合直接粘贴到墨墨单词本的“词本正文”。包含快速捕获写入的单词。导出会去重：同一单词多次导出只会输出一次。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-
-                if vm.vocabCSVURL == nil {
-                    Text("提示：请先选择词汇 CSV。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
 
                 HStack(spacing: 10) {
                     Button("生成导出预览") { vm.prepareMomoExportPreview() }
