@@ -22,6 +22,9 @@ final class ImporterViewModel: ObservableObject {
     @Published var mode: ImportMode = .merged {
         didSet { UserDefaults.standard.set(mode.rawValue, forKey: RecentSelectionKeys.lastImportMode) }
     }
+    @Published var enrichMissingVocabWithSmartLookup: Bool = Defaults.smartLookupEnrichImportVocab {
+        didSet { UserDefaults.standard.set(enrichMissingVocabWithSmartLookup, forKey: PreferencesKeys.smartLookupEnrichImportVocab) }
+    }
 
     @Published var preparedPlan: PreparedImportPlan?
 
@@ -61,6 +64,7 @@ final class ImporterViewModel: ObservableObject {
            let m = ImportMode(rawValue: rawMode) {
             mode = m
         }
+        enrichMissingVocabWithSmartLookup = defaults.object(forKey: PreferencesKeys.smartLookupEnrichImportVocab) as? Bool ?? Defaults.smartLookupEnrichImportVocab
 
         if let vaultPath = defaults.string(forKey: RecentSelectionKeys.lastVaultPath) {
             let url = URL(fileURLWithPath: vaultPath, isDirectory: true)
@@ -342,11 +346,12 @@ final class ImporterViewModel: ObservableObject {
         prepareTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let vm = self else { return }
             do {
-                let plan = try ImportPlanner.preparePlan(
+                let plan = try await ImportPlanner.preparePlan(
                     vaultURL: vaultURL,
                     sentenceCSVURL: sentenceURL,
                     vocabCSVURL: vocabURL,
                     mode: mode,
+                    enrichMissingVocabWithSmartLookup: vm.enrichMissingVocabWithSmartLookup,
                     progress: { p, msg in
                         guard !Task.isCancelled else { return }
                         Task { @MainActor in
@@ -882,8 +887,9 @@ enum ImportPlanner {
         sentenceCSVURL: URL?,
         vocabCSVURL: URL?,
         mode: ImportMode,
+        enrichMissingVocabWithSmartLookup: Bool,
         progress: (@Sendable (Double, String) -> Void)? = nil
-    ) throws -> PreparedImportPlan {
+    ) async throws -> PreparedImportPlan {
         func readTextFileLossy(_ url: URL) -> String? {
             do {
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
@@ -1027,7 +1033,7 @@ enum ImportPlanner {
                 var unreadable = 0
                 // Stream the scan to avoid holding a large list of URLs in memory.
                 if let e = fm.enumerator(at: outputRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                    for case let u as URL in e {
+                    while let u = e.nextObject() as? URL {
                         if u.pathExtension.lowercased() != "md" { continue }
                         guard let text = readTextFileLossy(u) else {
                             unreadable += 1
@@ -1146,6 +1152,24 @@ enum ImportPlanner {
             parseFailures.append(contentsOf: parsed.failures)
             skippedIndexDuplicates += parsed.skippedIndexDuplicates
             skippedBatchDuplicates += parsed.skippedBatchDuplicates
+        }
+
+        if enrichMissingVocabWithSmartLookup, !vocabClips.isEmpty {
+            progress?(0.80, "智能补全词汇…")
+            let enriched = await enrichVocabClips(vocabClips, preferences: prefs) { p, msg in
+                progress?(0.80 + 0.02 * p, msg)
+            }
+            vocabClips = enriched.items
+            if let configWarning = enriched.configurationWarning {
+                addWarning(.warning, "智能查词已跳过", configWarning)
+            }
+            if enriched.failureCount > 0 {
+                addWarning(
+                    .warning,
+                    "部分词汇智能补全失败",
+                    "共有 \(enriched.failureCount) 条词汇补全失败，已保留原始 CSV 内容继续预览/导入。"
+                )
+            }
         }
 
         // Group by date.
@@ -1284,6 +1308,108 @@ enum ImportPlanner {
             observedExistingSentenceIDs: observedExistingSentenceIDs,
             observedExistingVocabIDs: observedExistingVocabIDs
         )
+    }
+
+    private struct VocabEnrichmentSummary: Sendable {
+        let items: [VocabClip]
+        let failureCount: Int
+        let configurationWarning: String?
+    }
+
+    private static func enrichVocabClips(
+        _ items: [VocabClip],
+        preferences: PreferencesSnapshot,
+        progress: (@Sendable (Double, String) -> Void)? = nil
+    ) async -> VocabEnrichmentSummary {
+        guard !items.isEmpty else {
+            return VocabEnrichmentSummary(items: items, failureCount: 0, configurationWarning: nil)
+        }
+
+        let settings = preferences.smartLookupSettings
+        if settings.providerMode == .apiOnly, !settings.canUseAPI {
+            return VocabEnrichmentSummary(
+                items: items,
+                failureCount: 0,
+                configurationWarning: "当前 Provider 设为“仅 API”，但 Base URL / Model / API Key 未配置完整。"
+            )
+        }
+
+        let service = SmartLookupService.shared
+        let maxConcurrent = 2
+        var nextIndex = 0
+        var completed = 0
+        var failureCount = 0
+        var results = Array<VocabClip?>(repeating: nil, count: items.count)
+
+        func mergedClip(_ clip: VocabClip, with lookup: SmartLookupResult?) -> VocabClip {
+            guard let lookup else { return clip }
+
+            let mergedTranslation: String
+            if clip.translation.oeiTrimmed().isEmpty {
+                mergedTranslation = lookup.meaningZH.oeiTrimmed()
+            } else {
+                mergedTranslation = clip.translation
+            }
+
+            let mergedExamples = clip.examples.isEmpty ? Array(lookup.examples.prefix(2)) : clip.examples
+
+            return VocabClip(
+                id: clip.id,
+                word: clip.word,
+                phonetic: clip.phonetic,
+                translation: mergedTranslation,
+                examples: mergedExamples,
+                source: clip.source,
+                date: clip.date
+            )
+        }
+
+        await withTaskGroup(of: (Int, Result<VocabClip, Error>).self) { group in
+            func enqueue(_ index: Int) {
+                let clip = items[index]
+                group.addTask {
+                    do {
+                        let lookup = try await service.lookupVocabulary(
+                            term: clip.word,
+                            existingTranslation: clip.translation,
+                            settings: settings,
+                            dictionaryMode: preferences.dictionaryLookupMode,
+                            intent: .explicitEnhancement
+                        )
+                        return (index, .success(mergedClip(clip, with: lookup)))
+                    } catch {
+                        return (index, .failure(error))
+                    }
+                }
+            }
+
+            let initial = min(maxConcurrent, items.count)
+            while nextIndex < initial {
+                enqueue(nextIndex)
+                nextIndex += 1
+            }
+
+            while let (index, result) = await group.next() {
+                completed += 1
+                progress?(Double(completed) / Double(max(items.count, 1)), "智能补全词汇…")
+
+                switch result {
+                case .success(let clip):
+                    results[index] = clip
+                case .failure:
+                    results[index] = items[index]
+                    failureCount += 1
+                }
+
+                if nextIndex < items.count {
+                    enqueue(nextIndex)
+                    nextIndex += 1
+                }
+            }
+        }
+
+        let merged = results.enumerated().map { idx, clip in clip ?? items[idx] }
+        return VocabEnrichmentSummary(items: merged, failureCount: failureCount, configurationWarning: nil)
     }
 
     static func performImport(
@@ -1677,6 +1803,7 @@ enum ImportPlanner {
                     word: word,
                     phonetic: phonetic,
                     translation: translation,
+                    examples: [],
                     source: nil,
                     date: date
                 )

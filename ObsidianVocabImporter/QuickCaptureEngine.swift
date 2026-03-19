@@ -18,6 +18,7 @@ struct QuickCaptureInput: Sendable {
     let kind: QuickCaptureKind
     let text: String
     let translation: String
+    let examples: [VocabExample]
     let source: String
     // When capturing a word/phrase, optionally save the full sentence alongside it.
     // This is commonly used when watching YouTube subtitles/transcripts.
@@ -194,6 +195,7 @@ enum QuickCaptureEngine {
                 word: cleanedWord,
                 phonetic: nil,
                 translation: input.translation,
+                examples: input.examples,
                 // If we also save a full sentence in the same capture, keep the source on the
                 // sentence block only to avoid repeating it twice in Review.md.
                 source: (ctxSentenceOrNil == nil ? sourceOrNil : nil),

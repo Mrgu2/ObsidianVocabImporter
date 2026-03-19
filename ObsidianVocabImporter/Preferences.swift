@@ -13,6 +13,15 @@ enum PreferencesKeys {
 
     // Quick capture: system dictionary lookup behavior
     static let dictionaryLookupMode = "oei.dictionaryLookupMode"
+
+    // Smart lookup: provider + remote API config
+    static let smartLookupProviderMode = "oei.smartLookupProviderMode"
+    static let smartLookupBaseURL = "oei.smartLookupBaseURL"
+    static let smartLookupAPIPath = "oei.smartLookupAPIPath"
+    static let smartLookupModel = "oei.smartLookupModel"
+    static let smartLookupExtraHeaders = "oei.smartLookupExtraHeaders"
+    static let smartLookupUseCache = "oei.smartLookupUseCache"
+    static let smartLookupEnrichImportVocab = "oei.smartLookupEnrichImportVocab"
 }
 
 enum RecentSelectionKeys {
@@ -34,6 +43,14 @@ enum Defaults {
 
     // Prefer zh meaning, but allow English fallback when zh dictionary has no entry.
     static let dictionaryLookupMode: DictionaryLookupMode = .preferChineseThenEnglish
+
+    static let smartLookupProviderMode: SmartLookupProviderMode = .localThenAPI
+    static let smartLookupBaseURL = ""
+    static let smartLookupAPIPath = "/v1/chat/completions"
+    static let smartLookupModel = ""
+    static let smartLookupExtraHeaders = ""
+    static let smartLookupUseCache = true
+    static let smartLookupEnrichImportVocab = false
 }
 
 enum DictionaryLookupMode: String, CaseIterable, Identifiable, Sendable {
@@ -61,6 +78,12 @@ struct PreferencesSnapshot: Sendable, Equatable {
     let autoArchiveMastered: Bool
     let addMasteredTag: Bool
     let dictionaryLookupMode: DictionaryLookupMode
+    let smartLookupProviderMode: SmartLookupProviderMode
+    let smartLookupBaseURL: String
+    let smartLookupAPIPath: String
+    let smartLookupModel: String
+    let smartLookupExtraHeaders: String
+    let smartLookupUseCache: Bool
 
     static func load(from defaults: UserDefaults = .standard) -> PreferencesSnapshot {
         let rawRoot = defaults.string(forKey: PreferencesKeys.outputRootName) ?? Defaults.outputRootName
@@ -81,6 +104,14 @@ struct PreferencesSnapshot: Sendable, Equatable {
         let rawDictMode = defaults.string(forKey: PreferencesKeys.dictionaryLookupMode) ?? Defaults.dictionaryLookupMode.rawValue
         let dictMode = DictionaryLookupMode(rawValue: rawDictMode) ?? Defaults.dictionaryLookupMode
 
+        let rawSmartMode = defaults.string(forKey: PreferencesKeys.smartLookupProviderMode) ?? Defaults.smartLookupProviderMode.rawValue
+        let smartMode = SmartLookupProviderMode(rawValue: rawSmartMode) ?? Defaults.smartLookupProviderMode
+        let smartBaseURL = defaults.string(forKey: PreferencesKeys.smartLookupBaseURL) ?? Defaults.smartLookupBaseURL
+        let smartAPIPath = defaults.string(forKey: PreferencesKeys.smartLookupAPIPath) ?? Defaults.smartLookupAPIPath
+        let smartModel = defaults.string(forKey: PreferencesKeys.smartLookupModel) ?? Defaults.smartLookupModel
+        let smartHeaders = defaults.string(forKey: PreferencesKeys.smartLookupExtraHeaders) ?? Defaults.smartLookupExtraHeaders
+        let smartUseCache = defaults.object(forKey: PreferencesKeys.smartLookupUseCache) as? Bool ?? Defaults.smartLookupUseCache
+
         return PreferencesSnapshot(
             outputRootRelativePath: root.isEmpty ? Defaults.outputRootName : root,
             organizeByDateFolder: organize,
@@ -89,7 +120,25 @@ struct PreferencesSnapshot: Sendable, Equatable {
             highlightVocabInSentences: highlight,
             autoArchiveMastered: autoArchive,
             addMasteredTag: addTag,
-            dictionaryLookupMode: dictMode
+            dictionaryLookupMode: dictMode,
+            smartLookupProviderMode: smartMode,
+            smartLookupBaseURL: smartBaseURL,
+            smartLookupAPIPath: smartAPIPath,
+            smartLookupModel: smartModel,
+            smartLookupExtraHeaders: smartHeaders,
+            smartLookupUseCache: smartUseCache
+        )
+    }
+
+    var smartLookupSettings: SmartLookupSettings {
+        SmartLookupSettings(
+            providerMode: smartLookupProviderMode,
+            baseURLString: smartLookupBaseURL,
+            apiPathString: smartLookupAPIPath,
+            model: smartLookupModel,
+            apiKey: SmartLookupKeychain.loadAPIKey(),
+            extraHeadersRaw: smartLookupExtraHeaders,
+            useCache: smartLookupUseCache
         )
     }
 }

@@ -6,6 +6,7 @@ final class QuickCaptureViewModel: ObservableObject {
     @Published var kind: QuickCaptureKind = .sentence
     @Published var text: String = ""
     @Published var translation: String = ""
+    @Published var examples: [VocabExample] = []
     @Published var contextSentence: String = ""
     @Published var source: String = ""
     @Published var date: Date = Date()
@@ -13,13 +14,16 @@ final class QuickCaptureViewModel: ObservableObject {
     @Published var statusText: String = ""
     @Published var isWorking: Bool = false
     @Published var isLookingUpMeaning: Bool = false
+    @Published var isSmartLookingUp: Bool = false
     @Published var meaningLookupHint: String = ""
+    @Published var smartLookupHint: String = ""
 
     // If nil, fall back to persisted vault selection.
     var vaultURLOverride: URL?
 
     private var lastLookupKey: String = ""
     private var pendingLookupTask: Task<Void, Never>?
+    private var smartLookupTask: Task<Void, Never>?
 
     func resolvedVaultURL() -> URL? {
         vaultURLOverride ?? VaultUtilities.persistedVaultURL()
@@ -65,28 +69,7 @@ final class QuickCaptureViewModel: ObservableObject {
     }
 
     private func sanitizeLookupTerm(_ raw: String) -> String {
-        var s = raw.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
-        if s.isEmpty { return s }
-
-        let wrappers: Set<Character> = [
-            "\"", "'", "“", "”", "‘", "’",
-            "(", ")", "[", "]", "{", "}", "<", ">",
-            "（", "）", "【", "】", "「", "」", "『", "』", "《", "》",
-            ",", ".", "!", "?", ":", ";",
-            "，", "。", "！", "？", "：", "；",
-            "…", "—", "–", "-", "·"
-        ]
-
-        while let first = s.first, wrappers.contains(first) {
-            s.removeFirst()
-            s = s.oeiTrimmed()
-        }
-        while let last = s.last, wrappers.contains(last) {
-            s.removeLast()
-            s = s.oeiTrimmed()
-        }
-
-        return s.oeiCompressWhitespaceToSingleSpaces()
+        SmartLookupService.sanitizeLookupTerm(raw)
     }
 
     func scheduleMeaningLookupDebounced() {
@@ -104,7 +87,7 @@ final class QuickCaptureViewModel: ObservableObject {
         meaningLookupHint = ""
 
         guard kind == .vocabulary else { return }
-        guard !isWorking, !isLookingUpMeaning else { return }
+        guard !isWorking, !isLookingUpMeaning, !isSmartLookingUp else { return }
         if !force, !translation.oeiTrimmed().isEmpty { return }
 
         let term = sanitizeLookupTerm(text)
@@ -137,6 +120,64 @@ final class QuickCaptureViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func performSmartLookup() {
+        smartLookupHint = ""
+
+        guard kind == .vocabulary else { return }
+        guard !isWorking, !isLookingUpMeaning, !isSmartLookingUp else { return }
+
+        let term = sanitizeLookupTerm(text)
+        guard !term.isEmpty else { return }
+        guard !containsHan(term) else {
+            smartLookupHint = "智能查词仅支持英语词汇/短语。"
+            return
+        }
+        guard !looksLikeSentence(term) else {
+            smartLookupHint = "当前内容更像整句，请先输入词汇或短语。"
+            return
+        }
+
+        let prefs = PreferencesSnapshot.load()
+        let settings = prefs.smartLookupSettings
+        let existingTranslation = translation
+        isSmartLookingUp = true
+
+        smartLookupTask?.cancel()
+        smartLookupTask = Task.detached(priority: .userInitiated) {
+            do {
+                let result = try await SmartLookupService.shared.lookupVocabulary(
+                    term: term,
+                    existingTranslation: existingTranslation,
+                    settings: settings,
+                    dictionaryMode: prefs.dictionaryLookupMode,
+                    intent: .explicitEnhancement
+                )
+                await MainActor.run {
+                    self.isSmartLookingUp = false
+                    guard let result else {
+                        self.smartLookupHint = "智能查词没有返回可用结果。"
+                        return
+                    }
+                    self.applySmartLookupResult(result)
+                    self.smartLookupHint = result.examples.isEmpty ? "已补全释义" : "已补全释义和例句"
+                }
+            } catch {
+                await MainActor.run {
+                    self.isSmartLookingUp = false
+                    self.smartLookupHint = "智能查词失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func applySmartLookupResult(_ result: SmartLookupResult) {
+        let mergedMeaning = result.meaningZH.oeiTrimmed()
+        if !mergedMeaning.isEmpty {
+            translation = mergedMeaning
+        }
+        examples = Array(result.examples.prefix(2))
     }
 
     func resetFromClipboard() {
@@ -202,6 +243,8 @@ final class QuickCaptureViewModel: ObservableObject {
         date = Date()
         statusText = ""
         meaningLookupHint = ""
+        smartLookupHint = ""
+        examples = []
 
         // If the clipboard didn't indicate a specific format, infer kind.
         if kind != .vocabulary {
@@ -240,6 +283,7 @@ final class QuickCaptureViewModel: ObservableObject {
             kind: kind,
             text: text,
             translation: translation,
+            examples: examples,
             source: source,
             contextSentence: contextSentence,
             dateYMD: dateYMD
@@ -300,6 +344,10 @@ struct QuickCaptureView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: vm.kind) { _ in
+                    if vm.kind != .vocabulary {
+                        vm.examples = []
+                        vm.smartLookupHint = ""
+                    }
                     vm.lookupMeaningFromSystemDictionaryIfNeeded(force: false)
                 }
 
@@ -338,8 +386,10 @@ struct QuickCaptureView: View {
                     }
 
                     Button("查词") { vm.lookupMeaningFromSystemDictionaryIfNeeded(force: true) }
-                        .disabled(vm.isWorking || vm.isLookingUpMeaning || vm.text.oeiTrimmed().isEmpty)
-                    if vm.isLookingUpMeaning {
+                        .disabled(vm.isWorking || vm.isLookingUpMeaning || vm.isSmartLookingUp || vm.text.oeiTrimmed().isEmpty)
+                    Button("智能查词") { vm.performSmartLookup() }
+                        .disabled(vm.isWorking || vm.isLookingUpMeaning || vm.isSmartLookingUp || vm.text.oeiTrimmed().isEmpty)
+                    if vm.isLookingUpMeaning || vm.isSmartLookingUp {
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -350,6 +400,34 @@ struct QuickCaptureView: View {
                 Text(vm.meaningLookupHint)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+
+            if vm.kind == .vocabulary, !vm.smartLookupHint.isEmpty {
+                Text(vm.smartLookupHint)
+                    .font(.footnote)
+                    .foregroundStyle(vm.smartLookupHint.contains("失败") ? .red : .secondary)
+            }
+
+            if vm.kind == .vocabulary, !vm.examples.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("例句预览")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(vm.examples.enumerated()), id: \.offset) { _, example in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(example.en)
+                            if let zh = example.zh, !zh.isEmpty {
+                                Text(zh)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary.opacity(0.25))
+                        .cornerRadius(8)
+                    }
+                }
             }
 
             if vm.kind == .vocabulary {

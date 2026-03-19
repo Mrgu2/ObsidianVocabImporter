@@ -45,6 +45,7 @@ struct ImportTabView: View {
         .onChange(of: vm.sentenceCSVURL) { _ in vm.schedulePreviewRefresh() }
         .onChange(of: vm.vocabCSVURL) { _ in vm.schedulePreviewRefresh() }
         .onChange(of: vm.mode) { _ in vm.schedulePreviewRefresh() }
+        .onChange(of: vm.enrichMissingVocabWithSmartLookup) { _ in vm.schedulePreviewRefresh() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             // Preferences affect output path and year completion; invalidate preview when they change.
             vm.handleUserDefaultsDidChange()
@@ -103,6 +104,15 @@ struct ImportTabView: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                Divider()
+
+                Toggle("补全缺失释义和例句（智能查词）", isOn: $vm.enrichMissingVocabWithSmartLookup)
+                    .disabled(vm.isWorking || (vm.mode == .sentences))
+
+                Text("开启后，会对词汇条目补全缺失释义和例句；已有释义不会被覆盖。预览阶段会读取缓存/调用已配置的智能查词 Provider。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
 
                 Divider()
 

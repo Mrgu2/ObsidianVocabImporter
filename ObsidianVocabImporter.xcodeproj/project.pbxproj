@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -21,14 +21,15 @@
 		6EF74348F5475F591F2693B3 /* CSVParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD2804F39222B929C3420D8A /* CSVParser.swift */; };
 		70D3DA46E0667A18D51E906B /* ColumnMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04777916EDA93C09BDB7DF45 /* ColumnMappingStore.swift */; };
 		7102791536D49D5B5664FBE4 /* MarkdownUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11827640CB18643F54EC75AE /* MarkdownUpdater.swift */; };
+		71AB12C4AA12BB34CC56DD78 /* SmartLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71AB12C4AA12BB34CC56DD77 /* SmartLookupService.swift */; };
 		739C06C386A2534F62C04FCA /* ReviewModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C10D0ECFB5CF9DEF74C75F /* ReviewModeView.swift */; };
 		74392AE5A9173CB37F9F984E /* AtomicFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD329D1D23F6F80E7EE8C389 /* AtomicFileWriter.swift */; };
 		83E82DC6411E3DA2F20F0565 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F5BA12166C3158C970B66D /* SettingsView.swift */; };
 		86437ABF1F9999AAC6222EF7 /* MomoExportIndexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02356AACA8EEABCD68225DE2 /* MomoExportIndexStore.swift */; };
 		942943B404038410BB4BE545 /* MomoWordExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F331E10880C5D0BE91850C /* MomoWordExporter.swift */; };
 		94DE6453AB337F6D067D0B0B /* ImportTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6F7155CC2597DD0221C39E /* ImportTabView.swift */; };
-		BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */; };
 		BAF0CF65B1FFD4A5BDAB514D /* VaultUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB329980F15ED49314797265 /* VaultUtilities.swift */; };
+		BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */; };
 		C8AC8270E2735EF31D0C5BDA /* QuickCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E739CFC3362D03CFF10D6E /* QuickCaptureView.swift */; };
 		CB29CD1EC82C3A1739B1C578 /* ImportedIndexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294A8A11D70D3D55194A5F49 /* ImportedIndexStore.swift */; };
 		D8E3102726E422DF01B6CD6B /* ColumnMappingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3AEB054B063957D473399B7 /* ColumnMappingView.swift */; };
@@ -36,6 +37,7 @@
 		E4786C72BA713AE0A2A1B747 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B27D18C5CF58FB8E71ACC44C /* Preferences.swift */; };
 		E716204271961E88F06E69CF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A837F688C9417501EE09746E /* AppDelegate.swift */; };
 		F09B767A1989F149C66FD92C /* QuickCaptureWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796B0A82FE8B4327D98F4AB1 /* QuickCaptureWindowController.swift */; };
+		F93C44A87D89E1F903251122 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F93C44A87D89E1F903251121 /* Security.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,11 +45,12 @@
 		04777916EDA93C09BDB7DF45 /* ColumnMappingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ColumnMappingStore.swift; sourceTree = "<group>"; };
 		11827640CB18643F54EC75AE /* MarkdownUpdater.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownUpdater.swift; sourceTree = "<group>"; };
 		164B5B9D6E86D60BD45785B9 /* ImportLogger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImportLogger.swift; sourceTree = "<group>"; };
-		1E2452AB7A1C365CFBEC13A2 /* ObsidianVocabImporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ObsidianVocabImporter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E2452AB7A1C365CFBEC13A2 /* Obsidian Vocab Importer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Obsidian Vocab Importer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1FC0B08D905425D8A92A4576 /* ColumnSchema.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ColumnSchema.swift; sourceTree = "<group>"; };
 		294A8A11D70D3D55194A5F49 /* ImportedIndexStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImportedIndexStore.swift; sourceTree = "<group>"; };
 		3E6F7155CC2597DD0221C39E /* ImportTabView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImportTabView.swift; sourceTree = "<group>"; };
 		72C10D0ECFB5CF9DEF74C75F /* ReviewModeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReviewModeView.swift; sourceTree = "<group>"; };
+		71AB12C4AA12BB34CC56DD77 /* SmartLookupService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartLookupService.swift; sourceTree = "<group>"; };
 		781BF505C88BCB0690065C91 /* ImporterViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImporterViewModel.swift; sourceTree = "<group>"; };
 		796B0A82FE8B4327D98F4AB1 /* QuickCaptureWindowController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickCaptureWindowController.swift; sourceTree = "<group>"; };
 		8960A313EE90F987D60804CE /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
@@ -68,6 +71,7 @@
 		E8E20912DD12C2A36AAA2125 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F2E739CFC3362D03CFF10D6E /* QuickCaptureView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickCaptureView.swift; sourceTree = "<group>"; };
 		F3AEB054B063957D473399B7 /* ColumnMappingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ColumnMappingView.swift; sourceTree = "<group>"; };
+		F93C44A87D89E1F903251121 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Security.framework; sourceTree = DEVELOPER_DIR; };
 		FD2804F39222B929C3420D8A /* CSVParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CSVParser.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -77,6 +81,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1F85A15541CC4513DFF2F821 /* Cocoa.framework in Frameworks */,
+				F93C44A87D89E1F903251122 /* Security.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,13 +114,13 @@
 				796B0A82FE8B4327D98F4AB1 /* QuickCaptureWindowController.swift */,
 				72C10D0ECFB5CF9DEF74C75F /* ReviewModeView.swift */,
 				98F5BA12166C3158C970B66D /* SettingsView.swift */,
+				71AB12C4AA12BB34CC56DD77 /* SmartLookupService.swift */,
 				AA8EE5FE03F4BA07FBF7346F /* SubtitleImportView.swift */,
 				B6684EEAF7AD6F9EA6C7278E /* SubtitleParser.swift */,
 				A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */,
 				CB329980F15ED49314797265 /* VaultUtilities.swift */,
 				D29F2798415FD0292EE266F7 /* Assets.xcassets */,
 			);
-			name = ObsidianVocabImporter;
 			path = ObsidianVocabImporter;
 			sourceTree = "<group>";
 		};
@@ -123,6 +128,7 @@
 			isa = PBXGroup;
 			children = (
 				8960A313EE90F987D60804CE /* Cocoa.framework */,
+				F93C44A87D89E1F903251121 /* Security.framework */,
 			);
 			name = "OS X";
 			sourceTree = "<group>";
@@ -147,7 +153,7 @@
 		F641E0650CD926DAB1B8910D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1E2452AB7A1C365CFBEC13A2 /* ObsidianVocabImporter.app */,
+				1E2452AB7A1C365CFBEC13A2 /* Obsidian Vocab Importer.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -169,7 +175,7 @@
 			);
 			name = ObsidianVocabImporter;
 			productName = ObsidianVocabImporter;
-			productReference = 1E2452AB7A1C365CFBEC13A2 /* ObsidianVocabImporter.app */;
+			productReference = 1E2452AB7A1C365CFBEC13A2 /* Obsidian Vocab Importer.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -178,8 +184,9 @@
 		8B0E591C9B284F28BD1E635C /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2620;
 			};
 			buildConfigurationList = 3A3C19CF4F11BB2174A5D2CF /* Build configuration list for PBXProject "ObsidianVocabImporter" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -190,8 +197,6 @@
 				Base,
 			);
 			mainGroup = CFC7176F5892BF8F7A4BDCC1;
-			minimizedProjectReferenceProxies = 0;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = F641E0650CD926DAB1B8910D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -240,6 +245,7 @@
 				F09B767A1989F149C66FD92C /* QuickCaptureWindowController.swift in Sources */,
 				739C06C386A2534F62C04FCA /* ReviewModeView.swift in Sources */,
 				83E82DC6411E3DA2F20F0565 /* SettingsView.swift in Sources */,
+				71AB12C4AA12BB34CC56DD78 /* SmartLookupService.swift in Sources */,
 				31BF0E1A18E5B216EC583FAB /* SubtitleImportView.swift in Sources */,
 				4303A48B8335FE68C87E5C10 /* SubtitleParser.swift in Sources */,
 				BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */,
@@ -258,9 +264,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = ObsidianVocabImporter/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.wenjiegu.obsidian-vocab-importer";
@@ -304,9 +314,11 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -319,6 +331,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
@@ -359,9 +372,11 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -381,6 +396,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
@@ -395,9 +411,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = ObsidianVocabImporter/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.wenjiegu.obsidian-vocab-importer";

@@ -10,6 +10,8 @@ final class SubtitleImportViewModel: ObservableObject {
 
     @Published var query: String = ""
     @Published var includeSource: Bool = true
+    @Published var vocabularyText: String = ""
+    @Published var enableSmartLookupForVocabulary: Bool = false
     @Published var date: Date = Date()
 
     @Published var statusText: String = ""
@@ -100,13 +102,49 @@ final class SubtitleImportViewModel: ObservableObject {
             source = ""
         }
 
-        let input = QuickCaptureInput(kind: .sentence, text: cue.text, translation: "", source: source, contextSentence: "", dateYMD: dateYMD)
-
         isWorking = true
         statusText = "正在写入…"
+        let vocabText = vocabularyText.oeiTrimmed()
+        let enableSmartLookupForVocabulary = self.enableSmartLookupForVocabulary
 
         Task.detached(priority: .userInitiated) {
             do {
+                let input: QuickCaptureInput
+                if !vocabText.isEmpty {
+                    let lookupSettings = prefs.smartLookupSettings
+                    let lookupResult: SmartLookupResult?
+                    if enableSmartLookupForVocabulary {
+                        lookupResult = try await SmartLookupService.shared.lookupVocabulary(
+                            term: vocabText,
+                            existingTranslation: "",
+                            settings: lookupSettings,
+                            dictionaryMode: prefs.dictionaryLookupMode,
+                            intent: .explicitEnhancement
+                        )
+                    } else {
+                        lookupResult = nil
+                    }
+
+                    input = QuickCaptureInput(
+                        kind: .vocabulary,
+                        text: vocabText,
+                        translation: lookupResult?.meaningZH ?? "",
+                        examples: lookupResult?.examples ?? [],
+                        source: source,
+                        contextSentence: cue.text,
+                        dateYMD: dateYMD
+                    )
+                } else {
+                    input = QuickCaptureInput(
+                        kind: .sentence,
+                        text: cue.text,
+                        translation: "",
+                        examples: [],
+                        source: source,
+                        contextSentence: "",
+                        dateYMD: dateYMD
+                    )
+                }
                 let result = try QuickCaptureEngine.capture(input: input, vaultURL: vaultURL, preferences: prefs)
                 await MainActor.run {
                     self.statusText = result.message
@@ -162,6 +200,17 @@ struct SubtitleImportView: View {
 
             TextField("搜索（可选）", text: $vm.query)
                 .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 12) {
+                TextField("关联词/短语（可选：写入词汇并附带当前字幕）", text: $vm.vocabularyText)
+                    .textFieldStyle(.roundedBorder)
+                Toggle("智能补全释义和例句", isOn: $vm.enableSmartLookupForVocabulary)
+                    .disabled(vm.vocabularyText.oeiTrimmed().isEmpty)
+            }
+
+            Text("如果填写了“关联词/短语”，写入时会同时创建一条词汇卡，并把当前字幕作为上下文句子附在词汇下。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
                 List(selection: $vm.selectedCueID) {

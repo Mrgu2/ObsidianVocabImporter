@@ -1102,6 +1102,7 @@ struct MarkdownUpdater {
     private static func renderVocabEntry(_ v: VocabClip) -> [String] {
         let word = v.word.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces()
         let translationRaw = v.translation.oeiTrimmed()
+        let examples = Array(v.examples.prefix(2))
         let source = v.source?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces() ?? ""
 
         let head: String
@@ -1126,6 +1127,15 @@ struct MarkdownUpdater {
         } else {
             out.append("  - \u{91ca}\u{4e49}\u{ff1a}") // 释义：
             out.append(contentsOf: translationLines.map { "    - \($0)" })
+        }
+        if !examples.isEmpty {
+            out.append("  - \u{4f8b}\u{53e5}\u{ff1a}") // 例句：
+            for example in examples {
+                out.append("    - \(example.en.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces())")
+                if let zh = example.zh?.oeiTrimmed().oeiCompressWhitespaceToSingleSpaces(), !zh.isEmpty {
+                    out.append("      - \u{4e2d}\u{6587}\u{ff1a}\(zh)") // 中文：
+                }
+            }
         }
         if !source.isEmpty {
             out.insert("  - \u{6765}\u{6e90}\u{ff1a}\(source)", at: out.count) // 来源：

@@ -77,13 +77,45 @@ struct SentenceClip: Identifiable, Hashable, Sendable {
     }
 }
 
+struct VocabExample: Codable, Hashable, Sendable {
+    let en: String
+    let zh: String?
+}
+
+struct SmartLookupResult: Codable, Hashable, Sendable {
+    let term: String
+    let meaningZH: String
+    let meaningEN: String?
+    let examples: [VocabExample]
+    let usageNote: String?
+}
+
 struct VocabClip: Identifiable, Hashable, Sendable {
     let id: String // vocab_<sha1>
     let word: String
     let phonetic: String?
     let translation: String
+    let examples: [VocabExample]
     let source: String? // optional: URL / timestamp / free-form note (e.g. YouTube)
     let date: String // yyyy-MM-dd
+
+    init(
+        id: String,
+        word: String,
+        phonetic: String?,
+        translation: String,
+        examples: [VocabExample] = [],
+        source: String?,
+        date: String
+    ) {
+        self.id = id
+        self.word = word
+        self.phonetic = phonetic
+        self.translation = translation
+        self.examples = examples
+        self.source = source
+        self.date = date
+    }
 
     static func makeID(word: String) -> String {
         // Why only word:

@@ -16,9 +16,12 @@ struct ContentView: View {
                 onClose: {
                     captureVM.text = ""
                     captureVM.translation = ""
+                    captureVM.examples = []
                     captureVM.contextSentence = ""
                     captureVM.source = ""
                     captureVM.statusText = ""
+                    captureVM.meaningLookupHint = ""
+                    captureVM.smartLookupHint = ""
                 }
             )
             .tabItem { Text("快速捕获") }
