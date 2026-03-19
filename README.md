@@ -8,7 +8,7 @@ Vocab Importer for Obsidian
 
 ## 1. 运行方式
 
-- 用 Xcode 打开：`ObsidianVocabImporter/ObsidianVocabImporter.xcodeproj`
+- 用 Xcode 打开：`ObsidianVocabImporter.xcodeproj`
 - 选择 Scheme：`ObsidianVocabImporter`
 - 如需真机运行/Archive，请在 Target 的 Signing 中选择你自己的 Team（本项目默认 `Automatic`，不包含任何网络权限）。
 
@@ -31,7 +31,56 @@ Vocab Importer for Obsidian
 7. 点击 `导入` 执行写入，完成后下方 `结果` 会显示写入了哪些文件、新增多少条、跳过多少重复。
 8. `结果` 区域还提供快捷按钮：打开输出目录 / 打开导入索引 / 打开日志（便于检查查重与排错）。
 
-## 2.1 墨墨单词本导出（纯单词）
+## 2.1 快速捕获与智能查词
+
+应用内置两层查词能力，面向“随手记一个词，然后立刻写进 Obsidian”这个场景：
+
+- 第一层：macOS 系统词典自动查词，适合离线、低延迟、零成本填充基础释义
+- 第二层：`Smart Lookup` 远程增强，适合补更稳的释义和 1 到 2 条短例句
+
+`快速捕获 -> 词汇` 模式下：
+
+- 输入词或短语后，会优先尝试系统词典自动填充“释义”
+- 可以手动点击 `智能查词`，按当前设置的 provider 调用 OpenAI 兼容 API
+- 智能查词返回的结果会回填到：
+  - `释义`
+  - `例句预览`
+- 写入时，例句会一并写进当天 Markdown
+
+智能查词设置项位于 `Settings -> 智能查词（API）`：
+
+- Provider mode：`仅本地词典 / 本地优先，必要时 API / 仅 API`
+- 支持自定义：
+  - `Base URL`
+  - `API Path`
+  - `Model`
+  - `API Key`
+  - `Extra Headers`
+- 内置预设：
+  - `MiniMax`
+  - `NVIDIA`
+
+说明：
+
+- `system prompt` 固定写死，不提供 UI 自定义入口，避免输出风格漂移
+- API Key 保存在当前 Mac 的 Keychain，不会写进 Vault
+- 结果会缓存到本机 Application Support，重复词条不会重复请求
+
+## 2.2 CSV / 字幕导入中的智能补全
+
+智能查词不只用于快速捕获，也接进了批量导入：
+
+- `词汇 CSV` 导入可选开启 `补全缺失释义和例句（智能查词）`
+- 只对“缺失字段”的词条发请求，不会无脑覆盖你 CSV 里已有的释义
+- 批量请求默认有限流，失败只记 warning，不阻断主导入
+
+字幕页也支持更偏学习场景的输入：
+
+- 你可以继续按原方式把整句作为 `句子` 写入
+- 也可以额外填写“关联词/短语”，把当前字幕句子作为上下文一起写成 `词汇 + 完整句子`
+- 可选再对这个词做智能补全，得到释义和例句
+
+## 2.3 墨墨单词本导出（纯单词）
 
 有时你可能只想把你在 Obsidian 里积累的词汇导出为**纯单词列表**（一行一个），粘贴到墨墨单词本的“词本正文”，不需要例句。
 
@@ -42,7 +91,7 @@ Vocab Importer for Obsidian
 - `导出到 TXT…`：把“新增单词”追加写入到一个 `.txt` 文件（如果文件已存在会在末尾追加）
 - `生成导出预览`：先生成一份预览文本，确认无误再导出
 
-## 2.2 兼容与迁移（旧索引目录）
+## 2.4 兼容与迁移（旧索引目录）
 
 如果你曾使用旧版本应用，Vault 里可能存在旧目录：
 
@@ -91,6 +140,10 @@ tags: [english, review]
 ```markdown
 - [ ] Word  /Phonetic/  %% id: vocab_xxx %%
   - 释义：Translation
+  - 例句：
+    - Example sentence one.
+      - 中文（可选）
+    - Example sentence two.
 ```
 
 > 说明：部分导出文件的 `Phonetic` 字段可能已经包含 `/.../`，导入器会自动规范化为“只保留一对斜杠”，避免出现 `//...//`。
