@@ -32,7 +32,8 @@ IFS=$'\n\t'
 #   Optional (no profile):
 #     export OVI_APPLE_ID="you@example.com"
 #     export OVI_TEAM_ID="TEAMID"
-#     export OVI_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+#     read -rsp "Apple app-specific password: " OVI_APP_PASSWORD; echo
+#     export OVI_APP_PASSWORD
 #
 # Signing:
 #   export OVI_SIGN_ID="Developer ID Application: Your Name (TEAMID)"

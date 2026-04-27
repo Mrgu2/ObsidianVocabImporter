@@ -80,16 +80,35 @@ Vocab Importer for Obsidian
 - 也可以额外填写“关联词/短语”，把当前字幕句子作为上下文一起写成 `词汇 + 完整句子`
 - 可选再对这个词做智能补全，得到释义和例句
 
-## 2.3 墨墨单词本导出（纯单词）
+## 2.3 墨墨单词本导出 / 云词本同步（纯单词）
 
-有时你可能只想把你在 Obsidian 里积累的词汇导出为**纯单词列表**（一行一个），粘贴到墨墨单词本的“词本正文”，不需要例句。
+有时你可能只想把你在 Obsidian 里积累的词汇导出为**纯单词列表**（一行一个），粘贴到墨墨单词本的“词本正文”，不需要例句。现在也可以直接同步到墨墨云词本。
 
-本应用提供 `墨墨单词本导出（纯单词）` 模块：
+本应用提供 `墨墨单词本导出 / 云词本同步（纯单词）` 模块：
 
 - 导出来源：扫描 Vault 输出目录（默认 `English Clips/`），因此会包含“快速捕获”写入的单词
 - `复制新增单词`：把“Vault 里未导出过的单词”复制到剪贴板
 - `导出到 TXT…`：把“新增单词”追加写入到一个 `.txt` 文件（如果文件已存在会在末尾追加）
-- `生成导出预览`：先生成一份预览文本，确认无误再导出
+- `刷新云词本列表`：先读取当前账号下的墨墨云词本，并在主界面下拉框中选择具体目标词本
+- `检查云词本差异`：通过墨墨开放 API 只读查询当前已选云词本，预览“将追加 / 远端已存在 / 本地历史命中（仅提示）”的数量和单词列表
+- 云同步索引现在只作为“本地历史提示”，不会在读取远端之前阻止补齐远端缺失词；真正是否跳过，以远端词本内容为准
+- `确认同步`：二次确认后才会写远端；如果主界面选中现有词本，则按选中的具体词本 ID 追加合并；如果选中 `新建云词本`，则按 Settings 里的标题新建
+- `生成导出预览`：先生成一份本地导出预览文本，确认无误再复制或导出文件
+
+墨墨云词本同步设置项位于 `Settings -> 墨墨开放 API`：
+
+- `目标云词本标题`：默认 `Obsidian Vocabulary`，仅在主界面选择 `新建云词本` 时使用
+- `墨墨开放 API Token`：需要先在墨墨背单词 app 中申请
+
+同步安全规则：
+
+- 只创建或追加更新目标云词本，不会删除远端词本，也不会清空远端已有内容
+- 写入前必须先刷新云词本列表、选择具体词本、检查差异，并在确认弹窗中二次确认
+- 确认同步时会重新读取远端词本再合并，避免预览后远端变化导致覆盖旧内容
+- 现有云词本一律按主界面选择的具体词本 ID 同步，不再按标题匹配已有词本，避免同名词本误写
+- 合并时按单词规范化去重，避免重复追加同一个词
+- 更新已有云词本时会保留远端当前状态；如果接口未返回必要 metadata，会直接中止更新，避免把远端简介或标签意外覆盖为空
+- Token 保存在当前 Mac 的 Keychain，不会写进 Vault 或项目文件
 
 ## 2.4 兼容与迁移（旧索引目录）
 
@@ -105,6 +124,7 @@ Vocab Importer for Obsidian
 导出也会去重（防止你反复导出同一批 CSV 时重复粘贴）：
 
 - 导出索引文件：`<Vault>/.obsidian-vocab-importer/momo_exported_vocab.json`
+- 云同步索引文件：`<Vault>/.obsidian-vocab-importer/momo_cloud_synced_vocab.json`
 - 去重 key 与 Obsidian 导入一致：`vocab_ + sha1(lowercase(trim(word)))`
 
 ## 3. 输出到 Obsidian 的目录结构
@@ -307,7 +327,8 @@ export OVI_SIGN_ID="Developer ID Application: Your Name (TEAMID)"
 ```bash
 export OVI_APPLE_ID="you@example.com"
 export OVI_TEAM_ID="TEAMID"
-export OVI_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+read -rsp "Apple app-specific password: " OVI_APP_PASSWORD; echo
+export OVI_APP_PASSWORD
 export OVI_SIGN_ID="Developer ID Application: Your Name (TEAMID)"
 ./scripts/release_notarize.sh --format zip
 ```

@@ -78,7 +78,7 @@ import Foundation
 
 @main
 struct Main {
-    static func main() throws {
+    static func main() async throws {
         let vaultPath = ProcessInfo.processInfo.environment["OVI_VAULT_PATH"] ?? ""
         if vaultPath.isEmpty {
             fputs("Missing OVI_VAULT_PATH\n", stderr)
@@ -88,11 +88,12 @@ struct Main {
         let csvURL = vaultURL.appendingPathComponent("VOCABULARY LIST.csv")
 
         // Prepare plan: should add only "cherry" as new (apple/banana duplicates).
-        let plan = try ImportPlanner.preparePlan(
+        let plan = try await ImportPlanner.preparePlan(
             vaultURL: vaultURL,
             sentenceCSVURL: nil,
             vocabCSVURL: csvURL,
             mode: .vocabulary,
+            enrichMissingVocabWithSmartLookup: false,
             progress: nil
         )
 
@@ -158,13 +159,17 @@ swiftc -O -o /tmp/ovi_verify_harness \
   "$APP_DIR/ColumnMappingStore.swift" \
   "$APP_DIR/Models.swift" \
   "$APP_DIR/Preferences.swift" \
+  "$APP_DIR/SystemDictionaryLookup.swift" \
+  "$APP_DIR/SmartLookupService.swift" \
   "$APP_DIR/ImportLogger.swift" \
+  "$APP_DIR/VaultUtilities.swift" \
   "$APP_DIR/ImportedIndexStore.swift" \
   "$APP_DIR/MomoExportIndexStore.swift" \
+  "$APP_DIR/MomoAPIClient.swift" \
   "$APP_DIR/MomoWordExporter.swift" \
   "$APP_DIR/MarkdownUpdater.swift" \
   "$APP_DIR/ImporterViewModel.swift" \
-  -framework AppKit -framework UniformTypeIdentifiers
+  -framework AppKit -framework Security -framework UniformTypeIdentifiers
 
 /tmp/ovi_verify_harness
 
@@ -177,4 +182,3 @@ else
   echo "(Real vault left intact: $VAULT_PATH)"
   echo "Created/updated: $VAULT_PATH/.obsidian-vocab-importer/"
 fi
-

@@ -2,12 +2,24 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+struct MomoCloudNotepadOption: Identifiable, Equatable, Sendable {
+    static let createNewID = "__momo_create_new__"
+
+    let id: String
+    let title: String
+    let subtitle: String
+
+    var isCreateNewOption: Bool { id == Self.createNewID }
+}
+
 @MainActor
 final class ImporterViewModel: ObservableObject {
     @Published var vaultURL: URL? = nil {
         didSet {
             persistURLPath(vaultURL, key: RecentSelectionKeys.lastVaultPath)
             momoPreview = nil
+            momoCloudPreview = nil
+            momoCloudResult = nil
         }
     }
     @Published var sentenceCSVURL: URL? = nil {
@@ -17,6 +29,8 @@ final class ImporterViewModel: ObservableObject {
         didSet {
             persistURLPath(vocabCSVURL, key: RecentSelectionKeys.lastVocabCSVPath)
             momoPreview = nil
+            momoCloudPreview = nil
+            momoCloudResult = nil
         }
     }
     @Published var mode: ImportMode = .merged {
@@ -35,6 +49,19 @@ final class ImporterViewModel: ObservableObject {
 
     @Published var importSummary: String = ""
     @Published var momoPreview: MomoExportPreview?
+    @Published var momoCloudPreview: MomoCloudSyncPreview?
+    @Published var momoCloudResult: MomoCloudSyncResult?
+    @Published var momoCloudNotepadOptions: [MomoCloudNotepadOption] = []
+    @Published var selectedMomoCloudNotepadID: String = Defaults.momoCloudSelectedNotepadID {
+        didSet {
+            let trimmed = selectedMomoCloudNotepadID.oeiTrimmed()
+            UserDefaults.standard.set(trimmed, forKey: PreferencesKeys.momoCloudSelectedNotepadID)
+            guard oldValue != selectedMomoCloudNotepadID else { return }
+            momoCloudPreview = nil
+            momoCloudResult = nil
+        }
+    }
+    @Published var isShowingMomoCloudConfirmation: Bool = false
     @Published var pendingColumnMapping: PendingColumnMapping?
 
     private var scheduledRefreshTask: Task<Void, Never>?
@@ -42,6 +69,8 @@ final class ImporterViewModel: ObservableObject {
     private var importTask: Task<Void, Never>?
     private var momoPreviewTask: Task<Void, Never>?
     private var momoExportTask: Task<Void, Never>?
+    private var momoCloudPreviewTask: Task<Void, Never>?
+    private var momoCloudListTask: Task<Void, Never>?
     private var maintenanceTask: Task<Void, Never>?
 
     private enum WorkKind {
@@ -65,6 +94,7 @@ final class ImporterViewModel: ObservableObject {
             mode = m
         }
         enrichMissingVocabWithSmartLookup = defaults.object(forKey: PreferencesKeys.smartLookupEnrichImportVocab) as? Bool ?? Defaults.smartLookupEnrichImportVocab
+        selectedMomoCloudNotepadID = defaults.string(forKey: PreferencesKeys.momoCloudSelectedNotepadID) ?? Defaults.momoCloudSelectedNotepadID
 
         if let vaultPath = defaults.string(forKey: RecentSelectionKeys.lastVaultPath) {
             let url = URL(fileURLWithPath: vaultPath, isDirectory: true)
@@ -103,7 +133,37 @@ final class ImporterViewModel: ObservableObject {
         let now = PreferencesSnapshot.load()
         guard now != lastKnownPreferences else { return }
         lastKnownPreferences = now
+        momoCloudPreview = nil
+        momoCloudResult = nil
+        if now.momoCloudSelectedNotepadID != selectedMomoCloudNotepadID {
+            selectedMomoCloudNotepadID = now.momoCloudSelectedNotepadID
+        }
+        if !momoCloudNotepadOptions.isEmpty {
+            let createTitle = now.momoCloudNotepadTitle
+            momoCloudNotepadOptions = momoCloudNotepadOptions.map { option in
+                guard option.isCreateNewOption else { return option }
+                return MomoCloudNotepadOption(
+                    id: option.id,
+                    title: option.title,
+                    subtitle: "使用 Settings 标题：\(createTitle)"
+                )
+            }
+        }
         schedulePreviewRefresh()
+    }
+
+    var canRefreshMomoCloudNotepads: Bool {
+        !MomoAPIKeychain.loadToken().oeiTrimmed().isEmpty && !isWorking
+    }
+
+    var selectedMomoCloudNotepadSummary: String {
+        if let option = momoCloudNotepadOptions.first(where: { $0.id == selectedMomoCloudNotepadID }) {
+            return option.subtitle.isEmpty ? option.title : "\(option.title) · \(option.subtitle)"
+        }
+        if selectedMomoCloudNotepadID.isEmpty {
+            return "请先刷新云词本列表并选择目标词本"
+        }
+        return "当前选择已失效，请刷新云词本列表"
     }
 
     var missingInputHint: String? {
@@ -470,6 +530,8 @@ final class ImporterViewModel: ObservableObject {
         scheduledRefreshTask?.cancel()
         scheduledRefreshTask = nil
         momoPreview = nil
+        momoCloudPreview = nil
+        momoCloudResult = nil
         lastError = nil
 
         guard let vaultURL else {
@@ -647,6 +709,289 @@ final class ImporterViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func prepareMomoCloudSyncPreview() {
+        momoCloudPreviewTask?.cancel()
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = nil
+        momoCloudPreview = nil
+        momoCloudResult = nil
+        isShowingMomoCloudConfirmation = false
+        lastError = nil
+
+        guard let vaultURL else {
+            lastError = "缺少 Vault 文件夹（用于保存墨墨云同步索引）。"
+            return
+        }
+        if momoCloudNotepadOptions.isEmpty {
+            refreshMomoCloudNotepadOptions()
+            return
+        }
+
+        let prefs = PreferencesSnapshot.load()
+        let title = UserDefaults.standard.string(forKey: PreferencesKeys.momoCloudNotepadTitle) ?? Defaults.momoCloudNotepadTitle
+        let selectedID = resolvedSelectedMomoCloudNotepadID()
+        let settings = MomoCloudSettings(token: MomoAPIKeychain.loadToken(), notepadTitle: title, selectedNotepadID: selectedID)
+        guard settings.canUseAPI else {
+            lastError = "墨墨开放 API Token 未配置。请先到 Settings -> 墨墨开放 API 填写 token。"
+            return
+        }
+        guard selectedID != nil || !settings.trimmedNotepadTitle.isEmpty else {
+            lastError = "请先选择目标云词本，或在 Settings 里填写新建词本标题。"
+            return
+        }
+
+        workKind = .momoExport
+        isWorking = true
+        progress = 0
+        statusText = "正在检查墨墨云词本差异…"
+
+        momoCloudPreviewTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let vm = self else { return }
+            do {
+                let preview = try await MomoWordExporter.prepareMomoCloudSyncPreview(
+                    vaultURL: vaultURL,
+                    preferences: prefs,
+                    settings: settings,
+                    progress: { p, message in
+                        guard !Task.isCancelled else { return }
+                        Task { @MainActor in
+                            vm.progress = p
+                            vm.statusText = message
+                        }
+                    }
+                )
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    vm.momoCloudPreview = preview
+                    vm.momoCloudResult = nil
+                    vm.momoPreview = MomoExportPreview(
+                        wordCount: preview.appendedCount,
+                        skippedIndexDuplicates: 0,
+                        skippedBatchDuplicates: preview.skippedBatchDuplicates,
+                        skippedFileDuplicates: preview.skippedRemoteDuplicates,
+                        parseFailures: preview.parseFailures,
+                        previewText: preview.previewText
+                    )
+                    vm.importSummary = """
+                    墨墨云词本差异预览
+                    - 目标词本：\(preview.notepadTitle)
+                    - 词本 ID：\(preview.notepadID)
+                    - 动作：\(preview.action)
+                    - 将追加：\(preview.appendedCount)
+                    - 跳过重复：\(preview.skippedTotal)
+                      - Vault 内重复：\(preview.skippedBatchDuplicates)
+                      - 墨墨云词本已存在：\(preview.skippedRemoteDuplicates)
+                    - 本地历史命中（仅提示，不阻止补齐远端）：\(preview.historicalIndexHits)
+                    - 解析失败：\(preview.parseFailures.count)
+                    """
+                    vm.statusText = preview.appendedCount == 0 ? "墨墨云词本差异检查完成：没有可追加的新单词。" : "墨墨云词本差异检查完成，请确认后同步。"
+                    vm.progress = 1.0
+                    vm.isWorking = false
+                    vm.workKind = nil
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    vm.lastError = "墨墨云词本差异检查失败：\(error.localizedDescription)"
+                    vm.statusText = ""
+                    vm.progress = 0
+                    vm.isWorking = false
+                    vm.workKind = nil
+                }
+            }
+        }
+    }
+
+    func requestMomoCloudSyncConfirmation() {
+        guard let preview = momoCloudPreview else {
+            lastError = "暂无墨墨云词本差异预览，请先点击“检查云词本差异”。"
+            return
+        }
+        guard preview.appendedCount > 0 else {
+            lastError = "没有可同步的新单词。"
+            return
+        }
+        isShowingMomoCloudConfirmation = true
+    }
+
+    func confirmMomoCloudSync() {
+        momoExportTask?.cancel()
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = nil
+        lastError = nil
+
+        guard let vaultURL else {
+            lastError = "缺少 Vault 文件夹（用于保存墨墨云同步索引）。"
+            return
+        }
+        guard let preview = momoCloudPreview else {
+            lastError = "暂无墨墨云词本差异预览，请先点击“检查云词本差异”。"
+            return
+        }
+
+        let title = UserDefaults.standard.string(forKey: PreferencesKeys.momoCloudNotepadTitle) ?? Defaults.momoCloudNotepadTitle
+        let settings = MomoCloudSettings(token: MomoAPIKeychain.loadToken(), notepadTitle: title, selectedNotepadID: resolvedSelectedMomoCloudNotepadID())
+        guard settings.canUseAPI else {
+            lastError = "墨墨开放 API Token 未配置。请先到 Settings -> 墨墨开放 API 填写 token。"
+            return
+        }
+
+        workKind = .momoExport
+        isWorking = true
+        progress = 0
+        statusText = "正在同步到墨墨云词本…"
+
+        momoExportTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let vm = self else { return }
+            do {
+                let result = try await MomoWordExporter.syncFromVaultToMomoCloud(
+                    vaultURL: vaultURL,
+                    settings: settings,
+                    preview: preview,
+                    progress: { p, message in
+                        guard !Task.isCancelled else { return }
+                        Task { @MainActor in
+                            vm.progress = p
+                            vm.statusText = message
+                        }
+                    }
+                )
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    vm.importSummary = result.summary
+                    vm.momoCloudResult = result
+                    vm.momoPreview = MomoExportPreview(
+                        wordCount: result.appendedCount,
+                        skippedIndexDuplicates: 0,
+                        skippedBatchDuplicates: result.skippedBatchDuplicates,
+                        skippedFileDuplicates: result.skippedRemoteDuplicates,
+                        parseFailures: result.parseFailures,
+                        previewText: result.previewText
+                    )
+                    vm.momoCloudPreview = nil
+                    vm.statusText = result.localIndexSaveSucceeded ? "墨墨云词本同步完成。" : "墨墨云词本已更新，但本地同步索引保存失败。"
+                    vm.progress = 1.0
+                    vm.isWorking = false
+                    vm.workKind = nil
+
+                    if vm.pendingPreviewRefreshAfterWork {
+                        vm.pendingPreviewRefreshAfterWork = false
+                        vm.schedulePreviewRefresh()
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    vm.lastError = "墨墨云词本同步失败：\(error.localizedDescription)"
+                    vm.statusText = ""
+                    vm.progress = 0
+                    vm.isWorking = false
+                    vm.workKind = nil
+                }
+            }
+        }
+    }
+
+    func refreshMomoCloudNotepadOptions() {
+        momoCloudListTask?.cancel()
+        lastError = nil
+        momoCloudPreview = nil
+        momoCloudResult = nil
+
+        let token = MomoAPIKeychain.loadToken()
+        guard !token.oeiTrimmed().isEmpty else {
+            lastError = "墨墨开放 API Token 未配置。请先到 Settings -> 墨墨开放 API 填写 token。"
+            return
+        }
+
+        workKind = .momoExport
+        isWorking = true
+        progress = 0
+        statusText = "正在拉取墨墨云词本列表…"
+
+        let createTitle = (UserDefaults.standard.string(forKey: PreferencesKeys.momoCloudNotepadTitle) ?? Defaults.momoCloudNotepadTitle).oeiTrimmed()
+
+        momoCloudListTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let vm = self else { return }
+            do {
+                let client = try MomoAPIClient(token: token)
+                let notepads = try await client.listAllNotepads { p in
+                    guard !Task.isCancelled else { return }
+                    Task { @MainActor in
+                        vm.progress = p
+                        vm.statusText = "正在拉取墨墨云词本列表…"
+                    }
+                }
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    let options = vm.makeMomoCloudNotepadOptions(from: notepads, createTitle: createTitle)
+                    vm.momoCloudNotepadOptions = options
+                    vm.selectedMomoCloudNotepadID = vm.chooseResolvedMomoCloudNotepadID(from: options)
+                    vm.importSummary = """
+                    墨墨云词本列表已刷新
+                    - 可选词本：\(notepads.count)
+                    - 当前目标：\(vm.selectedMomoCloudNotepadSummary)
+                    """
+                    vm.statusText = "墨墨云词本列表已刷新。"
+                    vm.progress = 1.0
+                    vm.isWorking = false
+                    vm.workKind = nil
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    vm.lastError = "拉取墨墨云词本列表失败：\(error.localizedDescription)"
+                    vm.statusText = ""
+                    vm.progress = 0
+                    vm.isWorking = false
+                    vm.workKind = nil
+                }
+            }
+        }
+    }
+
+    private func resolvedSelectedMomoCloudNotepadID() -> String? {
+        let trimmed = selectedMomoCloudNotepadID.oeiTrimmed()
+        guard !trimmed.isEmpty, trimmed != MomoCloudNotepadOption.createNewID else { return nil }
+        return trimmed
+    }
+
+    private func makeMomoCloudNotepadOptions(from notepads: [MomoBriefNotepad], createTitle: String) -> [MomoCloudNotepadOption] {
+        let creationTitle = createTitle.isEmpty ? Defaults.momoCloudNotepadTitle : createTitle
+        let createOption = MomoCloudNotepadOption(
+            id: MomoCloudNotepadOption.createNewID,
+            title: "新建云词本",
+            subtitle: "使用 Settings 标题：\(creationTitle)"
+        )
+
+        let existingOptions = notepads
+            .sorted {
+                let left = $0.title.localizedCaseInsensitiveCompare($1.title)
+                if left == .orderedSame { return $0.id < $1.id }
+                return left == .orderedAscending
+            }
+            .map {
+                MomoCloudNotepadOption(
+                    id: $0.id,
+                    title: $0.title,
+                    subtitle: "ID: \($0.id)"
+                )
+            }
+
+        return [createOption] + existingOptions
+    }
+
+    private func chooseResolvedMomoCloudNotepadID(from options: [MomoCloudNotepadOption]) -> String {
+        let current = selectedMomoCloudNotepadID.oeiTrimmed()
+        if !current.isEmpty, options.contains(where: { $0.id == current }) {
+            return current
+        }
+        return options.first?.id ?? Defaults.momoCloudSelectedNotepadID
     }
 
     // MARK: - Maintenance / Scan

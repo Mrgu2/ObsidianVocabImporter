@@ -13,6 +13,45 @@ struct MomoExportPreview: Identifiable, Sendable {
     var skippedTotal: Int { skippedIndexDuplicates + skippedBatchDuplicates + skippedFileDuplicates }
 }
 
+struct MomoCloudSyncResult: Sendable {
+    let summary: String
+    let previewText: String
+    let appendedCount: Int
+    let historicalIndexHits: Int
+    let skippedBatchDuplicates: Int
+    let skippedRemoteDuplicates: Int
+    let localIndexSaveSucceeded: Bool
+    let parseFailures: [ParseFailure]
+}
+
+struct MomoCloudSyncPreview: Identifiable, Sendable {
+    let id = UUID()
+    let notepadTitle: String
+    let notepadID: String
+    let action: String
+    let candidateWords: [String]
+    let wordsToAppend: [String]
+    let historicalIndexHits: Int
+    let skippedBatchDuplicates: Int
+    let skippedRemoteDuplicates: Int
+    let parseFailures: [ParseFailure]
+    let previewText: String
+
+    var appendedCount: Int { wordsToAppend.count }
+    var skippedTotal: Int { skippedBatchDuplicates + skippedRemoteDuplicates }
+
+    var confirmationMessage: String {
+        return """
+        目标词本：\(notepadTitle)
+        词本 ID：\(notepadID)
+        动作：\(action)
+        将追加：\(appendedCount) 个单词
+        跳过重复：\(skippedTotal) 个
+        本地历史命中：\(historicalIndexHits) 个（仅提示，不阻止补齐远端）
+        """
+    }
+}
+
 enum MomoExportDestination {
     case clipboard
     case file(URL)
@@ -154,6 +193,194 @@ enum MomoWordExporter {
             summary += "- 输出：\(url.path)\n"
         }
         return summary
+    }
+
+    static func prepareMomoCloudSyncPreview(
+        vaultURL: URL,
+        preferences: PreferencesSnapshot,
+        settings: MomoCloudSettings,
+        progress: (@Sendable (Double, String) -> Void)? = nil
+    ) async throws -> MomoCloudSyncPreview {
+        guard settings.canUseAPI else { throw MomoAPIError.missingToken }
+
+        progress?(0.0, "正在扫描 Vault 词汇…")
+        let store = MomoExportIndexStore(vaultURL: vaultURL, indexFileName: VaultSupportPaths.momoCloudSyncIndexFileName)
+        let syncedIndex = try store.load()
+        let parsed = try parseVocabWordsFromVault(vaultURL: vaultURL, preferences: preferences) { p in
+            progress?(min(0.35, p * 0.35), "正在扫描 Vault 词汇…")
+        }
+
+        let candidateWords = parsed.words
+        let historicalIndexHits = candidateWords.reduce(into: 0) { count, word in
+            if syncedIndex.contains(VocabClip.makeID(word: word)) {
+                count += 1
+            }
+        }
+
+        progress?(0.4, "正在连接墨墨开放 API…")
+        let client = try MomoAPIClient(token: settings.trimmedToken)
+        let notepadTitle = settings.trimmedNotepadTitle
+        let selectedNotepadID = settings.trimmedSelectedNotepadID
+
+        let action: String
+        let notepadID: String
+        let resolvedTitle: String
+        let skippedRemote: Int
+        let appendedWords: [String]
+
+        if let selectedNotepadID {
+            progress?(0.7, "正在读取墨墨云词本…")
+            let notepad = try await client.getNotepad(id: selectedNotepadID)
+            let merged = mergeMomoNotepadContent(existingContent: notepad.content, newWords: candidateWords)
+            skippedRemote = merged.skippedRemoteDuplicates
+            appendedWords = merged.appendedWords
+            resolvedTitle = notepad.title
+
+            if appendedWords.isEmpty {
+                action = "未更新（墨墨云词本中已存在全部候选词）"
+                notepadID = notepad.id
+            } else {
+                action = "将更新已有云词本"
+                notepadID = notepad.id
+            }
+        } else {
+            let merged = mergeMomoNotepadContent(existingContent: "", newWords: candidateWords)
+            skippedRemote = merged.skippedRemoteDuplicates
+            appendedWords = merged.appendedWords
+            resolvedTitle = notepadTitle
+            if appendedWords.isEmpty {
+                action = "未创建（没有可同步的新单词）"
+                notepadID = "-"
+            } else {
+                action = "将创建新云词本"
+                notepadID = "将创建新词本"
+            }
+        }
+
+        let logger = ImportLogger(vaultURL: vaultURL)
+        var logLines: [String] = []
+        if !parsed.failures.isEmpty {
+            logLines.append("墨墨云词本同步预览：解析失败（已跳过）：")
+            logLines.append(contentsOf: parsed.failures.map { $0.logLine })
+        }
+        if !logLines.isEmpty {
+            try logger.appendSession(title: "MoMo Cloud Sync Preview", lines: logLines)
+        }
+
+        let preview = appendedWords.joined(separator: "\n") + (appendedWords.isEmpty ? "" : "\n")
+        progress?(1.0, "墨墨云词本差异检查完成。")
+        return MomoCloudSyncPreview(
+            notepadTitle: resolvedTitle,
+            notepadID: notepadID,
+            action: action,
+            candidateWords: candidateWords,
+            wordsToAppend: appendedWords,
+            historicalIndexHits: historicalIndexHits,
+            skippedBatchDuplicates: parsed.skippedBatchDuplicates,
+            skippedRemoteDuplicates: skippedRemote,
+            parseFailures: parsed.failures,
+            previewText: preview
+        )
+    }
+
+    static func syncFromVaultToMomoCloud(
+        vaultURL: URL,
+        settings: MomoCloudSettings,
+        preview: MomoCloudSyncPreview,
+        progress: (@Sendable (Double, String) -> Void)? = nil
+    ) async throws -> MomoCloudSyncResult {
+        guard settings.canUseAPI else { throw MomoAPIError.missingToken }
+
+        let store = MomoExportIndexStore(vaultURL: vaultURL, indexFileName: VaultSupportPaths.momoCloudSyncIndexFileName)
+        var syncedIndex = try store.load()
+
+        progress?(0.1, "正在连接墨墨开放 API…")
+        let client = try MomoAPIClient(token: settings.trimmedToken)
+
+        let action: String
+        let notepadID: String
+        let skippedRemote: Int
+        let appendedWords: [String]
+        var remoteWriteSucceeded = false
+        var localIndexSaveSucceeded = false
+        var localIndexSaveDetail = ""
+
+        if let existingID = settings.trimmedSelectedNotepadID {
+            progress?(0.35, "正在重新读取墨墨云词本…")
+            let notepad = try await client.getNotepad(id: existingID)
+            let merged = mergeMomoNotepadContent(existingContent: notepad.content, newWords: preview.candidateWords)
+            skippedRemote = merged.skippedRemoteDuplicates
+            appendedWords = merged.appendedWords
+            notepadID = notepad.id
+
+            if appendedWords.isEmpty {
+                action = "未更新（墨墨云词本中已存在全部候选词）"
+                remoteWriteSucceeded = true
+            } else {
+                progress?(0.7, "正在更新墨墨云词本…")
+                _ = try await client.updateNotepad(notepad, content: merged.content)
+                action = "更新已有云词本"
+                remoteWriteSucceeded = true
+            }
+        } else {
+            let merged = mergeMomoNotepadContent(existingContent: "", newWords: preview.candidateWords)
+            skippedRemote = merged.skippedRemoteDuplicates
+            appendedWords = merged.appendedWords
+            if appendedWords.isEmpty {
+                action = "未创建（没有可同步的新单词）"
+                notepadID = "-"
+                remoteWriteSucceeded = true
+            } else {
+                progress?(0.7, "正在创建墨墨云词本…")
+                let created = try await client.createNotepad(title: settings.trimmedNotepadTitle, content: merged.content)
+                action = "创建新云词本"
+                notepadID = created.id
+                remoteWriteSucceeded = true
+            }
+        }
+
+        progress?(0.9, "正在保存本地同步索引…")
+        if !appendedWords.isEmpty {
+            for word in appendedWords {
+                syncedIndex.insert(VocabClip.makeID(word: word))
+            }
+            do {
+                try store.save(syncedIndex)
+                localIndexSaveSucceeded = true
+            } catch {
+                localIndexSaveDetail = error.localizedDescription
+            }
+        } else {
+            localIndexSaveSucceeded = true
+        }
+
+        let previewText = appendedWords.joined(separator: "\n") + (appendedWords.isEmpty ? "" : "\n")
+        var summary = "墨墨云词本同步摘要\n"
+        summary += "- 目标词本：\(preview.notepadTitle)\n"
+        summary += "- 词本 ID：\(notepadID)\n"
+        summary += "- 动作：\(action)\n"
+        summary += "- 远端写入：\(remoteWriteSucceeded ? "成功" : "未完成")\n"
+        summary += "- 本地同步索引：\(localIndexSaveSucceeded ? "成功" : "失败")\n"
+        if !localIndexSaveDetail.isEmpty {
+            summary += "  - 索引保存错误：\(localIndexSaveDetail)\n"
+        }
+        summary += "- 本次新增同步：\(appendedWords.count)\n"
+        summary += "- 跳过重复：\(preview.skippedBatchDuplicates + skippedRemote)\n"
+        summary += "  - Vault 内重复：\(preview.skippedBatchDuplicates)\n"
+        summary += "  - 墨墨云词本已存在：\(skippedRemote)\n"
+        summary += "- 本地历史命中（仅提示，不阻止补齐远端）：\(preview.historicalIndexHits)\n"
+        summary += "- 解析失败：\(preview.parseFailures.count)\n"
+        progress?(1.0, "墨墨云词本同步完成。")
+        return MomoCloudSyncResult(
+            summary: summary,
+            previewText: previewText,
+            appendedCount: appendedWords.count,
+            historicalIndexHits: preview.historicalIndexHits,
+            skippedBatchDuplicates: preview.skippedBatchDuplicates,
+            skippedRemoteDuplicates: skippedRemote,
+            localIndexSaveSucceeded: localIndexSaveSucceeded,
+            parseFailures: preview.parseFailures
+        )
     }
 
     // MARK: - CSV Export (Legacy)

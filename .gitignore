@@ -2,6 +2,24 @@
 .AppleDouble
 .LSOverride
 
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+secrets/
+Secrets/
+*.key
+*.pem
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.xcconfig
+!*.example.xcconfig
+
 # Xcode
 DerivedData/
 build/
@@ -22,4 +40,16 @@ dist/
 
 ## SwiftPM (in case you add it later)
 .build/
+.swiftpm/
 Package.resolved
+
+## Local app data / generated user content
+.obsidian-vocab-importer/
+*.log
+*.tmp
+*.bak
+
+## Release artifacts
+*.app
+*.dmg
+*.pkg

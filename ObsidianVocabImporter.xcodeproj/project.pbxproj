@@ -27,6 +27,7 @@
 		83E82DC6411E3DA2F20F0565 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F5BA12166C3158C970B66D /* SettingsView.swift */; };
 		86437ABF1F9999AAC6222EF7 /* MomoExportIndexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02356AACA8EEABCD68225DE2 /* MomoExportIndexStore.swift */; };
 		942943B404038410BB4BE545 /* MomoWordExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F331E10880C5D0BE91850C /* MomoWordExporter.swift */; };
+		9C6E4B9C985443AAB87932A1 /* MomoAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C6E4B9B985443AAB87932A1 /* MomoAPIClient.swift */; };
 		94DE6453AB337F6D067D0B0B /* ImportTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6F7155CC2597DD0221C39E /* ImportTabView.swift */; };
 		BAF0CF65B1FFD4A5BDAB514D /* VaultUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB329980F15ED49314797265 /* VaultUtilities.swift */; };
 		BB8B6645AD5446CD929CAFC0 /* SystemDictionaryLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */; };
@@ -55,6 +56,7 @@
 		796B0A82FE8B4327D98F4AB1 /* QuickCaptureWindowController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickCaptureWindowController.swift; sourceTree = "<group>"; };
 		8960A313EE90F987D60804CE /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		91F331E10880C5D0BE91850C /* MomoWordExporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MomoWordExporter.swift; sourceTree = "<group>"; };
+		9C6E4B9B985443AAB87932A1 /* MomoAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MomoAPIClient.swift; sourceTree = "<group>"; };
 		98F5BA12166C3158C970B66D /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A1112556963E4B7D931D397D /* SystemDictionaryLookup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemDictionaryLookup.swift; sourceTree = "<group>"; };
 		A837F688C9417501EE09746E /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				781BF505C88BCB0690065C91 /* ImporterViewModel.swift */,
 				11827640CB18643F54EC75AE /* MarkdownUpdater.swift */,
 				E849ADDBAAF9E325327A329E /* Models.swift */,
+				9C6E4B9B985443AAB87932A1 /* MomoAPIClient.swift */,
 				02356AACA8EEABCD68225DE2 /* MomoExportIndexStore.swift */,
 				91F331E10880C5D0BE91850C /* MomoWordExporter.swift */,
 				ABC8F1D7044EF133B6E769D3 /* ObsidianVocabImporterApp.swift */,
@@ -237,6 +240,7 @@
 				7102791536D49D5B5664FBE4 /* MarkdownUpdater.swift in Sources */,
 				E260E2E87086B360AC396754 /* Models.swift in Sources */,
 				86437ABF1F9999AAC6222EF7 /* MomoExportIndexStore.swift in Sources */,
+				9C6E4B9C985443AAB87932A1 /* MomoAPIClient.swift in Sources */,
 				942943B404038410BB4BE545 /* MomoWordExporter.swift in Sources */,
 				6A5612EB78F5CFAC7019A433 /* ObsidianVocabImporterApp.swift in Sources */,
 				E4786C72BA713AE0A2A1B747 /* Preferences.swift in Sources */,

@@ -22,6 +22,10 @@ enum PreferencesKeys {
     static let smartLookupExtraHeaders = "oei.smartLookupExtraHeaders"
     static let smartLookupUseCache = "oei.smartLookupUseCache"
     static let smartLookupEnrichImportVocab = "oei.smartLookupEnrichImportVocab"
+
+    // MoMo Open API
+    static let momoCloudNotepadTitle = "oei.momoCloudNotepadTitle"
+    static let momoCloudSelectedNotepadID = "oei.momoCloudSelectedNotepadID"
 }
 
 enum RecentSelectionKeys {
@@ -51,6 +55,9 @@ enum Defaults {
     static let smartLookupExtraHeaders = ""
     static let smartLookupUseCache = true
     static let smartLookupEnrichImportVocab = false
+
+    static let momoCloudNotepadTitle = "Obsidian Vocabulary"
+    static let momoCloudSelectedNotepadID = ""
 }
 
 enum DictionaryLookupMode: String, CaseIterable, Identifiable, Sendable {
@@ -84,6 +91,8 @@ struct PreferencesSnapshot: Sendable, Equatable {
     let smartLookupModel: String
     let smartLookupExtraHeaders: String
     let smartLookupUseCache: Bool
+    let momoCloudNotepadTitle: String
+    let momoCloudSelectedNotepadID: String
 
     static func load(from defaults: UserDefaults = .standard) -> PreferencesSnapshot {
         let rawRoot = defaults.string(forKey: PreferencesKeys.outputRootName) ?? Defaults.outputRootName
@@ -111,6 +120,8 @@ struct PreferencesSnapshot: Sendable, Equatable {
         let smartModel = defaults.string(forKey: PreferencesKeys.smartLookupModel) ?? Defaults.smartLookupModel
         let smartHeaders = defaults.string(forKey: PreferencesKeys.smartLookupExtraHeaders) ?? Defaults.smartLookupExtraHeaders
         let smartUseCache = defaults.object(forKey: PreferencesKeys.smartLookupUseCache) as? Bool ?? Defaults.smartLookupUseCache
+        let momoCloudTitle = defaults.string(forKey: PreferencesKeys.momoCloudNotepadTitle) ?? Defaults.momoCloudNotepadTitle
+        let momoCloudSelectedNotepadID = defaults.string(forKey: PreferencesKeys.momoCloudSelectedNotepadID) ?? Defaults.momoCloudSelectedNotepadID
 
         return PreferencesSnapshot(
             outputRootRelativePath: root.isEmpty ? Defaults.outputRootName : root,
@@ -126,7 +137,9 @@ struct PreferencesSnapshot: Sendable, Equatable {
             smartLookupAPIPath: smartAPIPath,
             smartLookupModel: smartModel,
             smartLookupExtraHeaders: smartHeaders,
-            smartLookupUseCache: smartUseCache
+            smartLookupUseCache: smartUseCache,
+            momoCloudNotepadTitle: momoCloudTitle.oeiTrimmed().isEmpty ? Defaults.momoCloudNotepadTitle : momoCloudTitle.oeiTrimmed(),
+            momoCloudSelectedNotepadID: momoCloudSelectedNotepadID.oeiTrimmed()
         )
     }
 

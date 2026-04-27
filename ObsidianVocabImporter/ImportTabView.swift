@@ -50,6 +50,12 @@ struct ImportTabView: View {
             // Preferences affect output path and year completion; invalidate preview when they change.
             vm.handleUserDefaultsDidChange()
         }
+        .alert("确认同步到墨墨云词本？", isPresented: $vm.isShowingMomoCloudConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("确认同步") { vm.confirmMomoCloudSync() }
+        } message: {
+            Text(vm.momoCloudPreview?.confirmationMessage ?? "")
+        }
     }
 
     private var vaultSection: some View {
@@ -276,9 +282,38 @@ struct ImportTabView: View {
     }
 
     private var momoSection: some View {
-        GroupBox("墨墨单词本导出（纯单词）") {
+        GroupBox("墨墨单词本导出 / 云词本同步（纯单词）") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("从 Vault 扫描词汇条目并导出“纯单词（一行一个）”，适合直接粘贴到墨墨单词本的“词本正文”。包含快速捕获写入的单词。导出会去重：同一单词多次导出只会输出一次。")
+                Text("从 Vault 扫描词汇条目并导出或同步“纯单词（一行一个）”。同步到墨墨云词本时只会追加合并，不会删除远端已有内容。包含快速捕获写入的单词。导出/同步会去重：同一单词多次处理只会输出一次。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Text("目标云词本")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Picker("目标云词本", selection: $vm.selectedMomoCloudNotepadID) {
+                        if vm.momoCloudNotepadOptions.isEmpty {
+                            Text("请先刷新云词本列表").tag("")
+                        } else {
+                            ForEach(vm.momoCloudNotepadOptions) { option in
+                                Text(option.subtitle.isEmpty ? option.title : "\(option.title) · \(option.subtitle)")
+                                    .tag(option.id)
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(minWidth: 320)
+                    .disabled(vm.isWorking)
+
+                    Button("刷新云词本列表") { vm.refreshMomoCloudNotepadOptions() }
+                        .disabled(!vm.canRefreshMomoCloudNotepads)
+
+                    Spacer()
+                }
+
+                Text(vm.selectedMomoCloudNotepadSummary)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -292,6 +327,12 @@ struct ImportTabView: View {
                     Button("导出到 TXT…") { vm.exportMomoWordsToTXT() }
                         .disabled(!vm.canMomoExport || vm.isWorking)
 
+                    Button("检查云词本差异") { vm.prepareMomoCloudSyncPreview() }
+                        .disabled(!vm.canMomoExport || vm.isWorking)
+
+                    Button("确认同步") { vm.requestMomoCloudSyncConfirmation() }
+                        .disabled(!vm.canMomoExport || vm.isWorking || (vm.momoCloudPreview?.appendedCount ?? 0) == 0)
+
                     Button("打开导出索引") { vm.openMomoExportIndexFile() }
                         .disabled(vm.vaultURL == nil)
 
@@ -301,7 +342,15 @@ struct ImportTabView: View {
                 if let p = vm.momoPreview {
                     HStack(spacing: 16) {
                         Text("新增单词：\(p.wordCount)")
-                        Text("跳过重复：\(p.skippedTotal)（索引 \(p.skippedIndexDuplicates) / 批次 \(p.skippedBatchDuplicates) / 文件 \(p.skippedFileDuplicates)）")
+                        if let cloudPreview = vm.momoCloudPreview {
+                            Text("跳过重复：\(p.skippedTotal)（批次 \(p.skippedBatchDuplicates) / 远端 \(p.skippedFileDuplicates)）")
+                            Text("本地历史命中：\(cloudPreview.historicalIndexHits)（仅提示）")
+                        } else if let cloudResult = vm.momoCloudResult {
+                            Text("跳过重复：\(p.skippedTotal)（批次 \(p.skippedBatchDuplicates) / 远端 \(p.skippedFileDuplicates)）")
+                            Text("本地历史命中：\(cloudResult.historicalIndexHits)（仅提示）")
+                        } else {
+                            Text("跳过重复：\(p.skippedTotal)（索引 \(p.skippedIndexDuplicates) / 批次 \(p.skippedBatchDuplicates) / 文件 \(p.skippedFileDuplicates)）")
+                        }
                         Text("解析失败：\(p.parseFailures.count)")
                     }
                     .font(.footnote)

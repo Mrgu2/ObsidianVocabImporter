@@ -8,6 +8,7 @@ enum VaultSupportPaths {
 
     static let importedIndexFileName = "imported_index.json"
     static let momoExportIndexFileName = "momo_exported_vocab.json"
+    static let momoCloudSyncIndexFileName = "momo_cloud_synced_vocab.json"
     static let logFileName = "import_log.txt"
 }
 

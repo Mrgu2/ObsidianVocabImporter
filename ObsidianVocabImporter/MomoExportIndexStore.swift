@@ -17,13 +17,15 @@ final class MomoExportIndexStore {
     // Legacy (read-only) directory + index.
     let legacyDirectoryURL: URL
     let legacyIndexURL: URL
+    private let indexFileName: String
 
-    init(vaultURL: URL) {
+    init(vaultURL: URL, indexFileName: String = VaultSupportPaths.momoExportIndexFileName) {
+        self.indexFileName = indexFileName
         self.directoryURL = vaultURL.appendingPathComponent(VaultSupportPaths.primaryDirName, isDirectory: true)
-        self.indexURL = directoryURL.appendingPathComponent(VaultSupportPaths.momoExportIndexFileName, isDirectory: false)
+        self.indexURL = directoryURL.appendingPathComponent(indexFileName, isDirectory: false)
 
         self.legacyDirectoryURL = vaultURL.appendingPathComponent(VaultSupportPaths.legacyDirName, isDirectory: true)
-        self.legacyIndexURL = legacyDirectoryURL.appendingPathComponent(VaultSupportPaths.momoExportIndexFileName, isDirectory: false)
+        self.legacyIndexURL = legacyDirectoryURL.appendingPathComponent(indexFileName, isDirectory: false)
     }
 
     func load() throws -> Set<String> {
@@ -47,7 +49,7 @@ final class MomoExportIndexStore {
                 f.locale = Locale(identifier: "en_US_POSIX")
                 f.dateFormat = "yyyyMMdd-HHmmss"
                 let ts = f.string(from: Date())
-                let name = "\(VaultSupportPaths.momoExportIndexFileName).corrupt-\(ts)-\(UUID().uuidString).bak"
+                let name = "\(indexFileName).corrupt-\(ts)-\(UUID().uuidString).bak"
                 let backupURL = backupDir.appendingPathComponent(name, isDirectory: false)
                 do {
                     try fm.moveItem(at: url, to: backupURL)
